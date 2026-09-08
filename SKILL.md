@@ -1,7 +1,7 @@
 ---
 name: avoid-ai-writing
 description: Audit and rewrite content to remove AI writing patterns ("AI-isms"). Use this skill when asked to "remove AI-isms," "clean up AI writing," "edit writing for AI patterns," "audit writing for AI tells," or "make this sound less like AI." Supports a detect-only mode, an edit-in-place mode for files, an optional voice profile (casual / professional / technical / warm / blunt), and an iterate-to-convergence pass.
-version: 3.33.2
+version: 3.34.0
 license: MIT
 compatibility: Any AI coding assistant that supports agentskills.io SKILL.md format (Claude Code, Cursor, VS Code Copilot, Hermes Agent, OpenHands, etc.) or OpenClaw. No external tools or APIs required.
 metadata:
@@ -96,6 +96,7 @@ Not all AI-isms are equal. When doing a quick pass or triaging a large document,
 - Social endorsement closers ("This one is worth your time:", "thank me later")
 - Lingering-attention claims ("the line I keep coming back to," "I can't stop thinking about this")
 - Narrated candor ("I would rather flag this than let you discover it later", "in the interest of full disclosure")
+- Paraprosdokians (twist-ending sentences: "We planned for every failure mode. Except the one that happened.")
 - Hedge-stacked predictions ("could potentially," "may eventually")
 - Real/actual adjective inflation ("real on-chain tokenomics")
 - Moral-adjective category errors ("honest shape," "flagged honestly")
