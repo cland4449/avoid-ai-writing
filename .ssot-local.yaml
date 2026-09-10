@@ -20,3 +20,5 @@ facts:
         pattern: 'It works in Node \(`>=(\d+)`\)'
       - file: CONTRIBUTING.md
         pattern: 'dependencies to install; Node (\d+)\+ only\.'
+      - file: detector/README.md
+        pattern: 'It runs identically in Node \(`>=(\d+)`\)'

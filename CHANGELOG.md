@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add repository-local SSOT CI checks for the detector's Node requirement,
+- 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
   advisory discovery, and drift controls; pin the existing promo checker.
 
 - 2026-09-06: Point the bundled house-style examples at the canonical public README so the link still works when the skill package is installed without the repository root.
