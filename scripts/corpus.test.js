@@ -9,7 +9,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { stripGutenberg, htmlToText, applySlice, sha256 } = require('./corpus.js');
+const { stripGutenberg, htmlToText, applySlice, sha256, cmdList } = require('./corpus.js');
 const { parseCsv } = require('./csv-lite.js');
 const { DOMAIN_REGISTER } = require('./dataset-raid.js');
 
@@ -192,6 +192,61 @@ test('raid: only defensible registers are mapped', () => {
   assert.equal(DOMAIN_REGISTER.reddit, 'conversational');
   assert.equal(DOMAIN_REGISTER.code, undefined, 'code is not a prose register');
   assert.equal(DOMAIN_REGISTER.german, undefined, 'non-English domains are out of scope');
+});
+
+
+// ── Corpus listing ─────────────────────────────────────────────────────
+
+test('list prints observed mixed registers after the preferred register order', () => {
+  const manifest = {
+    version: 1,
+    documents: [
+      {
+        id: 'blog-one',
+        year: 2020,
+        register: 'blog',
+        words: 100,
+        source: { type: 'local', path: '/missing/blog-one.txt', license: 'test' },
+      },
+      {
+        id: 'raid-en',
+        year: 2026,
+        register: 'mixed',
+        words: 0,
+        source: { type: 'local', path: '/missing/raid-en.txt', license: 'test' },
+      },
+      {
+        id: 'hc3-en',
+        year: 2026,
+        register: 'mixed',
+        words: 0,
+        source: { type: 'local', path: '/missing/hc3-en.txt', license: 'test' },
+      },
+    ],
+  };
+
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    assert.equal(cmdList(manifest), 0);
+  } finally {
+    console.log = originalLog;
+  }
+
+  const output = lines.join('\n');
+  assert.ok(output.includes('3 document(s) across 2 register(s)'));
+  assert.ok(output.includes('  blog  (1 docs, 100 words)'));
+  assert.ok(output.includes('  mixed  (2 docs, 0 words)'));
+  assert.ok(output.indexOf('  blog  ') < output.indexOf('  mixed  '));
+  assert.ok(output.includes('raid-en'));
+  assert.ok(output.includes('hc3-en'));
+
+  const printedRows = ['blog-one', 'raid-en', 'hc3-en'].filter((id) =>
+    output.includes(id)
+  );
+  assert.equal(printedRows.length, manifest.documents.length);
+  assert.ok(output.includes('registers with no coverage yet: technical-blog'));
 });
 
 // ── Hashing ────────────────────────────────────────────────────────────
