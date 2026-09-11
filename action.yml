@@ -7,9 +7,9 @@ inputs:
     required: false
     default: "**/*.md"
   threshold:
-    description: Maximum deterministic findings allowed per file. This is not the 0-100 score.
+    description: Maximum deterministic findings allowed per file. Default 6 is the corpus-backed reusable-gate baseline; set 0 for a strict zero-findings policy.
     required: false
-    default: "0"
+    default: "6"
   context:
     description: Detector context profile (general, technical, marketing, or personal).
     required: false
