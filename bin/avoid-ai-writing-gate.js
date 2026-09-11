@@ -15,7 +15,7 @@ the configured threshold. This gate never uses the composite 0-100 score.
 Options:
   --glob <pattern>                         Git glob to scan (for CI)
   --threshold <count>                     Maximum findings per file (default: 0)
-  --context <general|technical>            Detector context (default: technical)
+  --context <general|technical|marketing|personal>  Detector context (default: technical)
   --source-mode <plain|rendered-markdown>  Source mode (default: rendered-markdown)
   -h, --help                               Show this help
 
@@ -24,7 +24,7 @@ Examples:
   avoid-ai-writing-gate --context technical README.md docs/guide.md
 `;
 
-const CONTEXTS = ["general", "technical"];
+const CONTEXTS = ["general", "technical", "marketing", "personal"];
 const SOURCE_MODES = ["plain", "rendered-markdown"];
 
 function parseArgs(argv) {
