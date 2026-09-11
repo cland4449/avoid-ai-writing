@@ -197,16 +197,30 @@ test('raid: only defensible registers are mapped', () => {
 
 // ── Corpus listing ─────────────────────────────────────────────────────
 
-test('list prints observed mixed registers after the preferred register order', () => {
+test('list preserves preferred register order and sorts observed extras', () => {
   const manifest = {
     version: 1,
     documents: [
+      {
+        id: 'academic-one',
+        year: 2021,
+        register: 'academic',
+        words: 80,
+        source: { type: 'local', path: '/missing/academic-one.txt', license: 'test' },
+      },
       {
         id: 'blog-one',
         year: 2020,
         register: 'blog',
         words: 100,
         source: { type: 'local', path: '/missing/blog-one.txt', license: 'test' },
+      },
+      {
+        id: 'zeta-extra',
+        year: 2026,
+        register: 'zeta',
+        words: 0,
+        source: { type: 'local', path: '/missing/zeta.txt', license: 'test' },
       },
       {
         id: 'raid-en',
@@ -222,6 +236,13 @@ test('list prints observed mixed registers after the preferred register order', 
         words: 0,
         source: { type: 'local', path: '/missing/hc3-en.txt', license: 'test' },
       },
+      {
+        id: 'alpha-extra',
+        year: 2026,
+        register: 'alpha-extra',
+        words: 0,
+        source: { type: 'local', path: '/missing/alpha.txt', license: 'test' },
+      },
     ],
   };
 
@@ -235,17 +256,30 @@ test('list prints observed mixed registers after the preferred register order', 
   }
 
   const output = lines.join('\n');
-  assert.ok(output.includes('3 document(s) across 2 register(s)'));
-  assert.ok(output.includes('  blog  (1 docs, 100 words)'));
-  assert.ok(output.includes('  mixed  (2 docs, 0 words)'));
-  assert.ok(output.indexOf('  blog  ') < output.indexOf('  mixed  '));
-  assert.ok(output.includes('raid-en'));
-  assert.ok(output.includes('hc3-en'));
+  assert.ok(output.includes('6 document(s) across 5 register(s)'));
 
-  const printedRows = ['blog-one', 'raid-en', 'hc3-en'].filter((id) =>
-    output.includes(id)
-  );
-  assert.equal(printedRows.length, manifest.documents.length);
+  const blogPos = output.indexOf('  blog  ');
+  const academicPos = output.indexOf('  academic  ');
+  const alphaPos = output.indexOf('  alpha-extra  ');
+  const mixedPos = output.indexOf('  mixed  ');
+  const zetaPos = output.indexOf('  zeta  ');
+
+  assert.ok(blogPos !== -1 && academicPos !== -1);
+  assert.ok(blogPos < academicPos, 'accepted registers keep REGISTERS order');
+  assert.ok(academicPos < alphaPos, 'extra registers come after accepted registers');
+  assert.ok(alphaPos < mixedPos && mixedPos < zetaPos, 'extra registers sort alphabetically');
+
+  for (const id of [
+    'academic-one',
+    'blog-one',
+    'zeta-extra',
+    'raid-en',
+    'hc3-en',
+    'alpha-extra',
+  ]) {
+    assert.ok(output.includes(id), `missing printed row for ${id}`);
+  }
+
   assert.ok(output.includes('registers with no coverage yet: technical-blog'));
 });
 
