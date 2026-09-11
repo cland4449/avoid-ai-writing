@@ -36,6 +36,33 @@ npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
 cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
 ```
 
+### As a CI or pre-commit gate
+
+`avoid-ai-writing-gate` turns the existing detector into a pass/fail interface
+for automation. It intentionally gates on deterministic `issues.length` per
+file rather than the composite score:
+
+```bash
+avoid-ai-writing-gate --glob "**/*.md" --threshold 0 --context technical
+avoid-ai-writing-gate --threshold 2 docs/guide.md README.md
+```
+
+Exit codes:
+
+- `0`: every scanned file is at or below the finding threshold;
+- `1`: at least one file exceeds the threshold;
+- `2`: usage, glob-expansion, file-read, or UTF-8 error.
+
+The GitHub Action in `action.yml` exposes `glob`, `threshold`, `context`,
+and `source-mode` inputs. The shipped pre-commit hook scans staged Markdown
+files with `technical` context, `rendered-markdown` source mode, and a
+zero-findings threshold.
+
+This gate does not run `validate.js`: preservation checks compare **two**
+versions of a document, while CI/pre-commit detection inspects one snapshot.
+Run the preservation validator separately when an automated rewrite is part of
+the workflow.
+
 ### From a local checkout
 
 Use the repository directly when developing or validating detector changes:
