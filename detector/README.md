@@ -12,6 +12,24 @@ the two in sync.
 
 ## Run it
 
+### From npm
+
+Install the published detector package in another project:
+
+```bash
+npm install avoid-ai-writing-detector
+```
+
+```js
+const AIDetector = require("avoid-ai-writing-detector");
+const result = AIDetector.analyzeText("Your text here…");
+console.log(result.score, result.label, result.issues.length);
+```
+
+### From a local checkout
+
+Use the repository directly when developing or validating detector changes:
+
 ```bash
 npm test          # pattern, category-contract, and preservation tests (no deps)
 # or directly:
@@ -24,8 +42,10 @@ const result = AIDetector.analyzeText("Your text here…");
 console.log(result.score, result.label, result.issues.length);
 ```
 
-In the browser, load `patterns.js` as a plain script — it self-registers as a
-global `AIDetector` (the `module.exports` block is guarded and only runs under
+### In the browser
+
+Load `patterns.js` as a plain script — it self-registers as a global
+`AIDetector` (the `module.exports` block is guarded and only runs under
 CommonJS).
 
 ## `analyzeText(text, options?)` → result
