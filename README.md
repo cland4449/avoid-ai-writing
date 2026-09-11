@@ -359,6 +359,18 @@ build step.
 It's also the single source of the numeric score: the skill itself (and `detect` mode) report *which* patterns are present and how severe (P0/P1/P2), and the engine is what turns those into one computed 0–100 `score`. There's deliberately no second, prose-estimated score in `SKILL.md` — one scorer, not two.
 
 ```bash
+npm install avoid-ai-writing-detector
+```
+
+```js
+const AIDetector = require("avoid-ai-writing-detector");
+const { score, label, issues } = AIDetector.analyzeText("Your text here…");
+console.log(score, label, issues.length);
+```
+
+When working from a cloned checkout instead of the published npm package:
+
+```bash
 npm test          # run the detector's fixtures (no deps to install)
 ```
 
