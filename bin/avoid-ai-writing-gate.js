@@ -97,6 +97,14 @@ function main(argv) {
     const input = readUtf8(file);
     if (input.error) { process.stderr.write(`avoid-ai-writing-gate: ${input.error}\n`); return 2; }
     const result = AIDetector.analyzeText(input.text, { contextMode: parsed.context, sourceMode: parsed.sourceMode });
+    if (result.tooLong) {
+      const wordCount = result.stats?.wordCount;
+      const detail = Number.isFinite(wordCount) ? ` (${wordCount} words)` : "";
+      process.stderr.write(
+        `avoid-ai-writing-gate: cannot scan ${file}: detector limit exceeded${detail}\n`
+      );
+      return 2;
+    }
     const count = result.issues.length;
     const types = [...new Set(result.issues.map((issue) => issue.type))].sort();
     const over = count > parsed.threshold;
