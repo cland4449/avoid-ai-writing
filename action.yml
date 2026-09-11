@@ -23,12 +23,17 @@ runs:
   steps:
     - name: Gate prose with avoid-ai-writing detector
       shell: bash
+      env:
+        AAW_GLOB: ${{ inputs.glob }}
+        AAW_THRESHOLD: ${{ inputs.threshold }}
+        AAW_CONTEXT: ${{ inputs.context }}
+        AAW_SOURCE_MODE: ${{ inputs.source-mode }}
       run: >-
         node "$GITHUB_ACTION_PATH/bin/avoid-ai-writing-gate.js"
-        --glob "${{ inputs.glob }}"
-        --threshold "${{ inputs.threshold }}"
-        --context "${{ inputs.context }}"
-        --source-mode "${{ inputs.source-mode }}"
+        --glob "$AAW_GLOB"
+        --threshold "$AAW_THRESHOLD"
+        --context "$AAW_CONTEXT"
+        --source-mode "$AAW_SOURCE_MODE"
 branding:
   icon: edit-3
   color: purple
