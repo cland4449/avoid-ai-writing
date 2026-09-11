@@ -385,6 +385,51 @@ It prints the complete `analyzeText()` result as JSON and exits 0; usage and I/O
 errors go to stderr with exit code 2. Run `avoid-ai-writing --help` for the
 `--context` and `--source-mode` options.
 
+### Gate prose in GitHub Actions or pre-commit
+
+The repository also ships a deterministic gate that fails on **finding count per
+file**, not the composite 0–100 score. That keeps CI policy independent of score
+recalibration work such as #70.
+
+```yaml
+# .github/workflows/prose.yml
+steps:
+  - uses: actions/checkout@v4
+  - uses: conorbronsdon/avoid-ai-writing@main
+    with:
+      glob: "**/*.md"
+      threshold: "0"
+      context: technical
+```
+
+For long-lived production workflows, pin `uses:` to a release tag or commit SHA
+that contains `action.yml`.
+
+`threshold` is the maximum number of deterministic findings allowed in **each**
+file. The default context is `technical`, and Markdown is analyzed with
+`rendered-markdown` source masking.
+
+Pre-commit users can install the repository hook:
+
+```yaml
+repos:
+  - repo: https://github.com/conorbronsdon/avoid-ai-writing
+    rev: main
+    hooks:
+      - id: avoid-ai-writing
+```
+
+Pin `rev` to a release tag or commit SHA in shared repositories. The hook scans
+staged `.md` / `.mdx` files with the same zero-findings default. Override the
+entry in your pre-commit config when you need a different finding threshold.
+
+The gate only **detects**. Preservation validation still requires an original and
+a rewritten file and remains a separate command:
+
+```bash
+node detector/validate.js before.md after.md
+```
+
 When working from a cloned checkout instead of the published npm package:
 
 ```bash
