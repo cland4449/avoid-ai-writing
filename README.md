@@ -373,8 +373,8 @@ console.log(score, label, issues.length);
 The package also ships a zero-dependency CLI:
 
 ```bash
-npx avoid-ai-writing draft.md                             # score a file
-cat draft.md | npx avoid-ai-writing --context technical   # or pipe text in
+npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
+cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
 ```
 
 After a global install (`npm install -g avoid-ai-writing-detector`) the command
