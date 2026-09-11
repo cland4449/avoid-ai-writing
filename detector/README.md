@@ -53,17 +53,25 @@ CommonJS).
 | Field | Type | Meaning |
 |---|---|---|
 | `score` | `0–100` | 0 = clean, 100 = heavy AI |
-| `label` | string | `Minimal` / `Some` / `Strong` / `Heavy` (or `Empty` / `Too short` / `Text too long`) |
+| `label` | string | scored: `Clean` (0) / `Minimal AI signals` (1–15) / `Some AI patterns` (16–35) / `Moderate AI signals` (36–60) / `Strong AI signals` (61–80) / `Heavy AI patterns` (81–100). Unscored: `Empty` / `Too short` / `Text too long` |
 | `issues[]` | `{type, text, severity, …}` | one entry per detected pattern; `type` keys map to [`CATEGORIES.md`](./CATEGORIES.md) |
 | `stats` | object | `wordCount`, per-tier counts, `contextMode`, `sourceMode`, masked-span counts, `denseAIVocab`, normalization flags, etc. |
-| `document_classification` | string | trinary `HUMAN_ONLY` / `MIXED` / `AI_ONLY` (shape mirrors GPTZero for swap-in) |
+| `document_classification` | string | `HUMAN_ONLY` / `MIXED` / `AI_ONLY` (shape mirrors GPTZero for swap-in), or `UNSCORED` on the early-exit paths |
 | `class_probabilities` | `{human, mixed, ai}` | sums to exactly 1.0 |
 | `confidence_category` | `low` / `medium` / `high` | |
 | `highlight_sentence_for_ai` | region[] | sentence spans with source offsets + per-region score, for UI highlighting |
 
-`options.contextMode` accepts `general` (default) or `technical`; technical mode
-suppresses flags that are legitimate in code-adjacent prose (e.g. Title Case
-headers). Invalid modes fall back to `general` and set `stats.contextModeFallback`.
+The three unscored labels share one result shape: `score` 0,
+`document_classification` `UNSCORED`, an even `class_probabilities` split, and
+`confidence_category` `low`. Branch on that classification rather than on the
+score, since clean text also scores 0 and is labeled `Clean`.
+
+`options.contextMode` accepts `general` (default), `technical`, `marketing`, and
+`personal`. Technical mode suppresses flags that are legitimate in code-adjacent
+prose (e.g. Title Case headers); `marketing` and `personal` are accepted and
+reported in `stats.contextMode`, but currently score the same as `general`.
+Invalid modes fall back to `general` and set `stats.contextModeFallback` to the
+value you passed.
 
 `options.sourceMode` accepts `plain` (default) or `rendered-markdown`. Rendered
 Markdown mode masks initial YAML frontmatter and HTML comments before pattern

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-09-11: Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the
+  engine returns, the `UNSCORED` classification on early-exit paths, and all four accepted `contextMode` values.
+
 - 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
   advisory discovery, and drift controls; pin the existing promo checker.
 
