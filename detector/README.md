@@ -36,6 +36,43 @@ npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
 cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
 ```
 
+### As a CI or pre-commit gate
+
+`avoid-ai-writing-gate` turns the existing detector into a pass/fail interface
+for automation. It intentionally gates on deterministic `issues.length` per
+file rather than the composite score:
+
+```bash
+avoid-ai-writing-gate --glob "**/*.md" --context technical
+avoid-ai-writing-gate --threshold 0 docs/strict-policy.md
+avoid-ai-writing-gate --threshold 2 docs/guide.md README.md
+```
+
+Exit codes:
+
+- `0`: every scanned file is at or below the finding threshold;
+- `1`: at least one file exceeds the threshold;
+- `2`: usage, glob-expansion, file-read, UTF-8, or unscannable-input error (including documents above the detector's 10,000-word limit).
+
+The GitHub Action in `action.yml` exposes `glob`, `threshold`, `context`,
+and `source-mode` inputs. The CLI, Action, and shipped pre-commit hook default
+to **6 findings per file** with `technical` context and `rendered-markdown`
+source mode.
+
+That default is measured rather than guessed. On the current 376-document human
+control corpus under those exact settings, threshold 0 rejects 31.4% of human
+documents, while threshold 6 rejects 1.9% (7/376). A value of 6 is at or above
+the observed 95th-percentile finding count for every represented register; the
+single `technical-blog` document is an explicitly under-sampled slice. Use
+`--threshold 0` when a repository deliberately wants a strict zero-findings
+policy. The corpus predates current model generations, so this threshold is a
+practical writing-quality default, not an AI-authorship accuracy claim.
+
+This gate does not run `validate.js`: preservation checks compare **two**
+versions of a document, while CI/pre-commit detection inspects one snapshot.
+Run the preservation validator separately when an automated rewrite is part of
+the workflow.
+
 ### From a local checkout
 
 Use the repository directly when developing or validating detector changes:
