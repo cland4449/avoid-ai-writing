@@ -49,6 +49,14 @@ const fromDashFile = run(["--", "-draft.md"], undefined, tmp);
 assert.strictEqual(fromDashFile.status, 0, fromDashFile.stderr);
 assert.deepStrictEqual(JSON.parse(fromDashFile.stdout), stdinJson);
 
+// Invalid UTF-8 fails instead of silently scoring replacement characters
+const invalidUtf8 = path.join(tmp, "invalid-utf8.txt");
+fs.writeFileSync(invalidUtf8, Buffer.from([0xc3, 0x28]));
+const fromInvalidUtf8 = run([invalidUtf8]);
+assert.strictEqual(fromInvalidUtf8.status, 2);
+assert.strictEqual(fromInvalidUtf8.stdout, "");
+assert.match(fromInvalidUtf8.stderr, /input is not valid UTF-8/);
+
 // empty input is still a successful analysis, and the selected modes stay visible
 const emptyDefault = run([], "");
 assert.strictEqual(emptyDefault.status, 0, emptyDefault.stderr);

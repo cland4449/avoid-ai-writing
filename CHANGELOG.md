@@ -21,18 +21,6 @@ All notable changes to this project are documented here.
 - Keep paired prose quotes around bare URLs visible to quote normalization even when the URL contains an unmatched opening parenthesis. Preserve internal URL apostrophes and explicit Markdown link destinations.
 - Add a GitHub follow invitation to the README's maintainer section.
 
-- **Published in the OpenAI Plugins Directory** as [Avoid AI Writing](https://chatgpt.com/plugins/plugins_6a9b77b18b8881918efa9c1255868164) (version 3.29.0, approved 2026-09-04). The bundled canonical skill now omits the frontmatter `metadata` block, which the portal rejects (#146); TERMS.md and PRIVACY.md state the plugin's scope and data handling in the terms OpenAI's plugin guidelines ask for (#147).
-- **Plugin validation now fails closed on deferred port-integrity gaps.** `agents/openai.yaml` rejects scalar policies and malformed mapping/list lines, SVG assets must have an actual `<svg>` root, and the bundled routing matrix carries a checked graph digest plus generated edge inventory so it cannot silently drift from `skill-graph.json`.
-
-- **README adds a restrained related-work block.** Links to Conor's public
-  builds, Chain of Thought, and `repo-audit` now sit after the core product and
-  usage documentation.
-- **Corpus manifest documents the register gap with two auditable seed entries.**
-  RFC 8259 provides a pre-LLM `docs` source and a 1995 W3C mailing-list message
-  provides a pre-LLM `conversational` source. The corpus README records that
-  both registers remain under-sampled and that `social` and `email` still have
-  no entries; the additions do not authorize publishing a rate.
-
 ---
 
 ## [3.33.0] — 2026-09-05
@@ -41,6 +29,16 @@ All notable changes to this project are documented here.
 
 - Restrict `load-bearing` detection to an explicit abstract-noun allowlist. Literal construction language, predicative uses, and unlisted nouns now pass (#56).
 - Publish with an OIDC-capable npm runtime and fail early when npm is too old for trusted publishing.
+- **Published in the OpenAI Plugins Directory** as [Avoid AI Writing](https://chatgpt.com/plugins/plugins_6a9b77b18b8881918efa9c1255868164) (version 3.29.0, approved 2026-09-04). The bundled canonical skill now omits the frontmatter `metadata` block, which the portal rejects (#146); TERMS.md and PRIVACY.md state the plugin's scope and data handling in the terms OpenAI's plugin guidelines ask for (#147).
+- **Plugin validation now fails closed on deferred port-integrity gaps.** `agents/openai.yaml` rejects scalar policies and malformed mapping/list lines, SVG assets must have an actual `<svg>` root, and the bundled routing matrix carries a checked graph digest plus generated edge inventory so it cannot silently drift from `skill-graph.json`.
+- **README adds a restrained related-work block.** Links to Conor's public
+  builds, Chain of Thought, and `repo-audit` now sit after the core product and
+  usage documentation.
+- **Corpus manifest documents the register gap with two auditable seed entries.**
+  RFC 8259 provides a pre-LLM `docs` source and a 1995 W3C mailing-list message
+  provides a pre-LLM `conversational` source. The corpus README records that
+  both registers remain under-sampled and that `social` and `email` still have
+  no entries; the additions do not authorize publishing a rate.
 
 - Split the entry skill from its pattern and profile reference for directory-aware agents (#52). Generate a complete source artifact and portable paste instructions from both files, with drift checks.
 - Claude bundles include the style checker, quote normalizer, shared Markdown protection, preservation validator, and examples they invoke (#102).

@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("fs");
+const { TextDecoder } = require("util");
 const AIDetector = require("../detector/patterns.js");
 
 const USAGE = `Usage: avoid-ai-writing [options] [file]
@@ -87,11 +88,18 @@ function parseArgs(argv) {
 
 function readInput(file) {
   const fromStdin = file === undefined || file === "-";
+  const source = fromStdin ? "stdin" : file;
+  let input;
   try {
-    return { text: fs.readFileSync(fromStdin ? 0 : file, "utf8") };
+    input = fs.readFileSync(fromStdin ? 0 : file);
   } catch (error) {
-    const source = fromStdin ? "stdin" : file;
     return { error: `cannot read ${source}: ${error.message}` };
+  }
+
+  try {
+    return { text: new TextDecoder("utf-8", { fatal: true }).decode(input) };
+  } catch {
+    return { error: `cannot read ${source}: input is not valid UTF-8` };
   }
 }
 
