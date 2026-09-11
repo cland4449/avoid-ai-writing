@@ -76,10 +76,10 @@ body:
     id: fixture
     attributes:
       label: May we use these examples as public test fixtures?
-      description: Fixtures live in the repo and run in CI. If you say no, the proposal is still usable; the examples just get replaced with ones written for the purpose.
+      description: The issue is public. Choose whether the examples may also be copied into files that run in CI.
       options:
         - "Yes, use them as public fixtures"
-        - "No, keep the text out of the repo"
+        - "No, do not copy them into committed fixtures"
     validations:
       required: true
 
@@ -118,3 +118,5 @@ body:
         gets, or records why it stays out. A rule that cannot survive its
         must-not-fire example does not ship, and the reasoning gets written
         down either way.
+
+        First-time contributors are welcome to ask for a review in the issue.
