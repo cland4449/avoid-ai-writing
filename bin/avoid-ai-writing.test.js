@@ -12,8 +12,8 @@ const AIDetector = require("../detector/patterns.js");
 const SAMPLE =
   "In today's fast-paced world, it is important to note that this is a testament to innovation.";
 
-function run(args, input) {
-  return spawnSync(process.execPath, [CLI, ...args], { input, encoding: "utf8" });
+function run(args, input, cwd) {
+  return spawnSync(process.execPath, [CLI, ...args], { input, encoding: "utf8", cwd });
 }
 
 // stdin: the complete analyzeText() result as JSON
@@ -45,7 +45,7 @@ assert.ok(help.stdout.includes("Usage: avoid-ai-writing"), "expected usage text 
 // "--" ends option parsing, so dash-prefixed file names still work
 const dashFile = path.join(tmp, "-draft.md");
 fs.writeFileSync(dashFile, SAMPLE, "utf8");
-const fromDashFile = run(["--", dashFile]);
+const fromDashFile = run(["--", "-draft.md"], undefined, tmp);
 assert.strictEqual(fromDashFile.status, 0, fromDashFile.stderr);
 assert.deepStrictEqual(JSON.parse(fromDashFile.stdout), stdinJson);
 

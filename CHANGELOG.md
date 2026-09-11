@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## [3.34.0] — 2026-09-11
 
-- 2026-09-11: Add the `avoid-ai-writing` command-line interface (package `bin`) for scoring one file or piped text as JSON, with `--context` and `--source-mode` options, `--help`, a `--` end-of-options separator, and usage/I-O errors on stderr with exit code 2, covered by child-process tests (#158).
+- 2026-09-11: Add the `avoid-ai-writing` command-line interface (package `bin`) for scoring one file or piped text as JSON, with `--context` and `--source-mode` options, `--help`, a `--` end-of-options separator, and usage/I/O errors on stderr with exit code 2, covered by child-process tests (#158).
 - 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
   advisory discovery, and drift controls; pin the existing promo checker.
 
