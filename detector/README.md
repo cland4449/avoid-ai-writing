@@ -26,6 +26,16 @@ const result = AIDetector.analyzeText("Your text here…");
 console.log(result.score, result.label, result.issues.length);
 ```
 
+### From the command line
+
+The published package exposes an `avoid-ai-writing` command that scores a file
+or stdin and prints the full result as JSON:
+
+```bash
+npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
+cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
+```
+
 ### From a local checkout
 
 Use the repository directly when developing or validating detector changes:

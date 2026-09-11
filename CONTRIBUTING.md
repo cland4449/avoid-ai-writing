@@ -29,6 +29,8 @@ First decide which kind of rule it is:
   `detector/CATEGORIES.md`. There is no detector type for these.
 
 If you are unsure which it is, open an issue first and we will sort it out.
+The [pattern proposal form](https://github.com/conorbronsdon/avoid-ai-writing/issues/new?template=pattern_proposal.yml)
+asks for what triage needs, including the example that must stay clean.
 
 ## Precision over recall
 
