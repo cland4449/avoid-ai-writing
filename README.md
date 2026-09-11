@@ -373,9 +373,12 @@ console.log(score, label, issues.length);
 The package also ships a zero-dependency CLI:
 
 ```bash
-avoid-ai-writing draft.md                             # score a file
-cat draft.md | avoid-ai-writing --context technical   # or pipe text in
+npx avoid-ai-writing draft.md                             # score a file
+cat draft.md | npx avoid-ai-writing --context technical   # or pipe text in
 ```
+
+After a global install (`npm install -g avoid-ai-writing-detector`) the command
+is available as `avoid-ai-writing` directly.
 
 It prints the complete `analyzeText()` result as JSON and exits 0; usage and I/O
 errors go to stderr with exit code 2. Run `avoid-ai-writing --help` for the

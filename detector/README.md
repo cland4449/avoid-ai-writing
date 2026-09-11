@@ -32,8 +32,8 @@ The published package exposes an `avoid-ai-writing` command that scores a file
 or stdin and prints the full result as JSON:
 
 ```bash
-avoid-ai-writing draft.md
-cat draft.md | avoid-ai-writing --context technical
+npx avoid-ai-writing draft.md
+cat draft.md | npx avoid-ai-writing --context technical
 ```
 
 ### From a local checkout

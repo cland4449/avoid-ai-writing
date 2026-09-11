@@ -42,9 +42,27 @@ const help = run(["--help"]);
 assert.strictEqual(help.status, 0);
 assert.ok(help.stdout.includes("Usage: avoid-ai-writing"), "expected usage text on stdout");
 
+// "--" ends option parsing, so dash-prefixed file names still work
+const dashFile = path.join(tmp, "-draft.md");
+fs.writeFileSync(dashFile, SAMPLE, "utf8");
+const fromDashFile = run(["--", dashFile]);
+assert.strictEqual(fromDashFile.status, 0, fromDashFile.stderr);
+assert.deepStrictEqual(JSON.parse(fromDashFile.stdout), stdinJson);
+
+// empty input is still a successful analysis, and the selected modes stay visible
+const emptyDefault = run([], "");
+assert.strictEqual(emptyDefault.status, 0, emptyDefault.stderr);
+const emptyJson = JSON.parse(emptyDefault.stdout);
+assert.strictEqual(emptyJson.stats.contextMode, "general");
+assert.strictEqual(emptyJson.stats.sourceMode, "plain");
+const emptyTechnical = run(["--context", "technical"], "");
+assert.strictEqual(emptyTechnical.status, 0, emptyTechnical.stderr);
+assert.strictEqual(JSON.parse(emptyTechnical.stdout).stats.contextMode, "technical");
+
 // errors: exit 2 with nothing on stdout
 const errorCases = [
   ["unknown option", ["--nope"]],
+  ["unknown option after help", ["--help", "--nope"]],
   ["missing value", ["--context"]],
   ["invalid context", ["--context", "nope"]],
   ["invalid source mode", ["--source-mode", "nope"]],
