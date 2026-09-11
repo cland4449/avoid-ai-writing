@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-09-11: Add a pattern proposal issue form so a new rule arrives with a should-fire
+  example, a must-not-fire example, and its false-positive risk; link it from `CONTRIBUTING.md`.
+
 - 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
   advisory discovery, and drift controls; pin the existing promo checker.
 
