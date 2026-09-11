@@ -10,6 +10,8 @@ All notable changes to this project are documented here.
 
 - Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
   voice-profile link that led to the triggering section.
+- Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the
+  engine returns, the `UNSCORED` classification on early-exit paths, and all four accepted `contextMode` values.
 
 ## [3.34.0] — 2026-09-11
 
