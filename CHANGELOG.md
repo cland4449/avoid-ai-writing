@@ -6,6 +6,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
+  voice-profile link that led to the triggering section.
+
 ## [3.34.0] — 2026-09-11
 
 ### Added
