@@ -23,7 +23,7 @@ Edit `SKILL.md` and `references/patterns.md` directly. When making changes:
 - Update the same version manually in both plugin manifests before syncing:
   - `plugins/avoid-ai-writing/.claude-plugin/plugin.json`
   - `.codex-plugin/plugin.json`
-- Run `bash scripts/sync-plugin-skill.sh`. The script validates both manifest versions against `SKILL.md` and regenerates the bundled skill copies, detector resources, scripts, examples, and portable skill artifacts; it does not generate the manifest versions. A mismatch fails with messages such as `version mismatch: SKILL.md=X Claude plugin=Y` or `version mismatch: SKILL.md=X OpenAI plugin=Y`.
+- Run `bash scripts/sync-plugin-skill.sh && bash scripts/sync-cursor-rules.sh`. The first script validates both manifest versions against `SKILL.md` and regenerates bundled skill copies, detector resources, scripts, and examples; the second regenerates the portable paste/Cursor artifacts. Neither script generates the manifest versions. A mismatch fails with messages such as `version mismatch: SKILL.md=X Claude plugin=Y` or `version mismatch: SKILL.md=X OpenAI plugin=Y`.
 - Run `npm test` to exercise the detector, category contract, validator, corpus helpers, and style checks.
 - Add a dated entry to CHANGELOG.md
 - Update README.md if the change affects installation, usage, feature list, or pattern count
