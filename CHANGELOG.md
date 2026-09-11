@@ -8,6 +8,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Include every observed corpus register in `corpus.js list`; preserve the preferred accepted-register order and sort additional registers deterministically.
 - Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
   voice-profile link that led to the triggering section.
 - Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the
