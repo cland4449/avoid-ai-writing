@@ -51,7 +51,7 @@ Exit codes:
 
 - `0`: every scanned file is at or below the finding threshold;
 - `1`: at least one file exceeds the threshold;
-- `2`: usage, glob-expansion, file-read, or UTF-8 error.
+- `2`: usage, glob-expansion, file-read, UTF-8, or unscannable-input error (including documents above the detector's 10,000-word limit).
 
 The GitHub Action in `action.yml` exposes `glob`, `threshold`, `context`,
 and `source-mode` inputs. The shipped pre-commit hook scans staged Markdown
