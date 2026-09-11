@@ -11,7 +11,7 @@ inputs:
     required: false
     default: "0"
   context:
-    description: Detector context profile (general or technical).
+    description: Detector context profile (general, technical, marketing, or personal).
     required: false
     default: technical
   source-mode:
