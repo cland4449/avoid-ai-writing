@@ -1,23 +1,25 @@
 # Changelog
 
-## [3.34.0] — 2026-09-11
-
-- 2026-09-11: Add the `avoid-ai-writing` command-line interface (package `bin`) for scoring one file or piped text as JSON, with `--context` and `--source-mode` options, `--help`, a `--` end-of-options separator, and usage/I/O errors on stderr with exit code 2, covered by child-process tests (#158).
-- 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
-  advisory discovery, and drift controls; pin the existing promo checker.
-
-- 2026-09-06: Point the bundled house-style examples at the canonical public README so the link still works when the skill package is installed without the repository root.
-- 2026-09-06: Keep em-dash overuse as a P2 writing-quality flag while excluding it from the authorship score, label, probabilities, confidence, and classification (#73). Existing rate thresholds and carve-outs are unchanged. Scores may be lower for text where em-dash overuse previously contributed weight.
-- 2026-09-06: Keep paired prose quotes around bare URLs visible to quote normalization even when the URL contains an unmatched opening parenthesis. Preserve internal URL apostrophes and explicit Markdown link destinations.
-- 2026-09-05: Add a GitHub follow invitation to the README's maintainer section.
-
 All notable changes to this project are documented here.
 
 ---
 
 ## [Unreleased]
 
+## [3.34.0] — 2026-09-11
+
+### Added
+
+- Add the `avoid-ai-writing` command-line interface (package `bin`) for scoring one file or piped text as JSON, with `--context` and `--source-mode` options, `--help`, a `--` end-of-options separator, and usage/I/O errors on stderr with exit code 2, covered by child-process tests (#158).
+
 ### Changed
+
+- Add repository-local SSOT CI checks for the detector's Node requirement,
+  advisory discovery, and drift controls; pin the existing promo checker.
+- Point the bundled house-style examples at the canonical public README so the link still works when the skill package is installed without the repository root.
+- Keep em-dash overuse as a P2 writing-quality flag while excluding it from the authorship score, label, probabilities, confidence, and classification (#73). Existing rate thresholds and carve-outs are unchanged. Scores may be lower for text where em-dash overuse previously contributed weight.
+- Keep paired prose quotes around bare URLs visible to quote normalization even when the URL contains an unmatched opening parenthesis. Preserve internal URL apostrophes and explicit Markdown link destinations.
+- Add a GitHub follow invitation to the README's maintainer section.
 
 - **Published in the OpenAI Plugins Directory** as [Avoid AI Writing](https://chatgpt.com/plugins/plugins_6a9b77b18b8881918efa9c1255868164) (version 3.29.0, approved 2026-09-04). The bundled canonical skill now omits the frontmatter `metadata` block, which the portal rejects (#146); TERMS.md and PRIVACY.md state the plugin's scope and data handling in the terms OpenAI's plugin guidelines ask for (#147).
 - **Plugin validation now fails closed on deferred port-integrity gaps.** `agents/openai.yaml` rejects scalar policies and malformed mapping/list lines, SVG assets must have an actual `<svg>` root, and the bundled routing matrix carries a checked graph digest plus generated edge inventory so it cannot silently drift from `skill-graph.json`.
