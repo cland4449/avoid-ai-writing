@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
 ### Added
 
 - Add the `avoid-ai-writing` command-line interface (package `bin`) for scoring one file or piped text as JSON, with `--context` and `--source-mode` options, `--help`, a `--` end-of-options separator, and usage/I/O errors on stderr with exit code 2, covered by child-process tests (#158).
+- Add a pattern proposal issue form so a new rule arrives with a should-fire
+  example, a must-not-fire example, and its false-positive risk; link it from `CONTRIBUTING.md`.
 
 ### Changed
 
