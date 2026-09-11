@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 2026-09-11: Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
+  voice-profile link that led to the triggering section.
+
 - 2026-09-10: Add repository-local SSOT CI checks for the detector's Node requirement,
   advisory discovery, and drift controls; pin the existing promo checker.
 
