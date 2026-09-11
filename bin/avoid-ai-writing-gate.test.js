@@ -37,6 +37,13 @@ const noInput = run([]);
 assert.strictEqual(noInput.status, 2);
 assert.match(noInput.stderr, /provide at least one file or --glob/);
 
+const tooLong = path.join(tmp, "too-long.md");
+fs.writeFileSync(tooLong, `${"word ".repeat(10001)}\n`, "utf8");
+const oversized = run([tooLong]);
+assert.strictEqual(oversized.status, 2, oversized.stderr);
+assert.match(oversized.stderr, /detector limit exceeded/);
+assert.doesNotMatch(oversized.stdout, /^PASS /m);
+
 const gitRepo = path.join(tmp, "repo");
 fs.mkdirSync(gitRepo);
 spawnSync("git", ["init", "-q"], { cwd: gitRepo });
@@ -48,6 +55,12 @@ const globbed = run(["--glob", "**/*.md", "--threshold", "0"], gitRepo);
 assert.strictEqual(globbed.status, 1, globbed.stderr);
 assert.match(globbed.stdout, /docs[\\/]draft\.md/);
 assert.doesNotMatch(globbed.stdout, /ignore\.js/);
+
+fs.writeFileSync(path.join(gitRepo, "-draft.md"), FLAGGED, "utf8");
+const dashPrefixed = run(["--threshold", "0", "--", "-draft.md"], gitRepo);
+assert.strictEqual(dashPrefixed.status, 1, dashPrefixed.stderr);
+assert.match(dashPrefixed.stdout, /-draft\.md/);
+assert.doesNotMatch(dashPrefixed.stderr, /unknown option/);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("avoid-ai-writing gate cli: ok");
