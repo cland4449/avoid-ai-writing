@@ -86,7 +86,7 @@ Then use `/clean-ai-writing <your text>` in Claude Code.
 
 ### Claude Cowork — install as a plugin
 
-[Cowork](https://www.anthropic.com/cowork) loads skills only from **installed plugins** — it doesn't scan `~/.claude/skills/`, so a bare clone (the Claude Code steps above) won't be discovered there. This repo doubles as a single-plugin [marketplace](https://code.claude.com/docs/en/plugin-marketplaces), so install it as a plugin instead:
+[Cowork](https://claude.com/product/cowork) loads skills only from **installed plugins** — it doesn't scan `~/.claude/skills/`, so a bare clone (the Claude Code steps above) won't be discovered there. This repo doubles as a single-plugin [marketplace](https://code.claude.com/docs/en/plugin-marketplaces), so install it as a plugin instead:
 
 ```bash
 /plugin marketplace add conorbronsdon/avoid-ai-writing
@@ -200,7 +200,7 @@ Trigger detect mode with: "detect," "flag only," "audit only," "just flag," "sca
 
 ## Pattern reference
 
-> Representative examples from the catalog — not the exhaustive list (that's [`SKILL.md`](./SKILL.md)). The skill's human-facing prose catalog and the [detector engine](./detector/) use **different counts on purpose**: the engine implements 54 `type` categories because it splits the vocabulary tiers and adds stylometric/fingerprint signals (punctuation distribution, function-word entropy, bypass-trick detection) that work as math over a document rather than as a rule you'd look up. The two are mapped in [`detector/CATEGORIES.md`](./detector/CATEGORIES.md); don't "fix" one count to match the other.
+> Representative examples from the catalog — not the exhaustive list (that's [`references/patterns.md`](./references/patterns.md)). The skill's human-facing prose catalog and the [detector engine](./detector/) use **different counts on purpose**: the engine implements 54 `type` categories because it splits the vocabulary tiers and adds stylometric/fingerprint signals (punctuation distribution, function-word entropy, bypass-trick detection) that work as math over a document rather than as a rule you'd look up. The two are mapped in [`detector/CATEGORIES.md`](./detector/CATEGORIES.md); don't "fix" one count to match the other.
 
 ### Content Patterns
 
@@ -368,6 +368,22 @@ const { score, label, issues } = AIDetector.analyzeText("Your text here…");
 console.log(score, label, issues.length);
 ```
 
+### Score a file or piped text from the command line
+
+The package also ships a zero-dependency CLI:
+
+```bash
+npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
+cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
+```
+
+After a global install (`npm install -g avoid-ai-writing-detector`) the command
+is available as `avoid-ai-writing` directly.
+
+It prints the complete `analyzeText()` result as JSON and exits 0; usage and I/O
+errors go to stderr with exit code 2. Run `avoid-ai-writing --help` for the
+`--context` and `--source-mode` options.
+
 When working from a cloned checkout instead of the published npm package:
 
 ```bash
@@ -430,7 +446,7 @@ the model applies, and a `mechanics` object whose checkable rules
 abbreviations gate the exit code; heading case, em-dash rate, and number spelling
 are advisory). [`examples/`](./examples/) has the schema. You can skip the input
 entirely and put your guide in your agent's context alongside a
-[voice profile](#triggering-the-skill), as instructions rather than as a checked
+[voice profile](./references/patterns.md#voice-profiles), as instructions rather than as a checked
 rule set.
 
 After a rewrite, `node scripts/normalize-quotes.js draft.md --reference original.md`
