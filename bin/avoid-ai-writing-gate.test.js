@@ -28,6 +28,13 @@ assert.match(permissive.stdout, /^PASS /m);
 const help = run(["--help"]);
 assert.strictEqual(help.status, 0);
 assert.match(help.stdout, /never uses the composite 0-100 score/);
+assert.match(help.stdout, /default: 6/);
+
+const clean = path.join(tmp, "clean.md");
+fs.writeFileSync(clean, "The deploy finished after the migration. The team checked logs, verified the database, and closed the incident.", "utf8");
+const defaultThreshold = run([clean]);
+assert.strictEqual(defaultThreshold.status, 0, defaultThreshold.stderr);
+assert.match(defaultThreshold.stdout, /threshold 6/);
 
 const badThreshold = run(["--threshold", "1.5", flagged]);
 assert.strictEqual(badThreshold.status, 2);
