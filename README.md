@@ -368,6 +368,22 @@ const { score, label, issues } = AIDetector.analyzeText("Your text here…");
 console.log(score, label, issues.length);
 ```
 
+### Score a file or piped text from the command line
+
+The package also ships a zero-dependency CLI:
+
+```bash
+npx --package avoid-ai-writing-detector avoid-ai-writing draft.md
+cat draft.md | npx --package avoid-ai-writing-detector avoid-ai-writing --context technical
+```
+
+After a global install (`npm install -g avoid-ai-writing-detector`) the command
+is available as `avoid-ai-writing` directly.
+
+It prints the complete `analyzeText()` result as JSON and exits 0; usage and I/O
+errors go to stderr with exit code 2. Run `avoid-ai-writing --help` for the
+`--context` and `--source-mode` options.
+
 When working from a cloned checkout instead of the published npm package:
 
 ```bash
