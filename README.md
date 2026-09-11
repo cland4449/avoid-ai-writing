@@ -398,7 +398,7 @@ steps:
   - uses: conorbronsdon/avoid-ai-writing@main
     with:
       glob: "**/*.md"
-      threshold: "0"
+      threshold: "6"
       context: technical
 ```
 
@@ -406,7 +406,17 @@ For long-lived production workflows, pin `uses:` to a release tag or commit SHA
 that contains `action.yml`.
 
 `threshold` is the maximum number of deterministic findings allowed in **each**
-file. The default context is `technical`, and Markdown is analyzed with
+file. The shipped default is **6**, chosen from the current human-control corpus
+using the same `technical` + `rendered-markdown` settings as the Action. Across
+376 human corpus documents, threshold 0 rejected 118/376 (31.4%); threshold 6
+rejected 7/376 (1.9%). Six is also at or above the observed 95th-percentile
+finding count in every represented register (the `technical-blog` register has
+only one corpus document, so that slice remains under-sampled). Set
+`threshold: "0"` explicitly when a project intentionally wants a strict
+zero-findings policy. This is a writing-quality baseline, not an authorship
+classifier calibration.
+
+The default context is `technical`, and Markdown is analyzed with
 `rendered-markdown` source masking.
 
 Pre-commit users can install the repository hook:
@@ -420,8 +430,9 @@ repos:
 ```
 
 Pin `rev` to a release tag or commit SHA in shared repositories. The hook scans
-staged `.md` / `.mdx` files with the same zero-findings default. Override the
-entry in your pre-commit config when you need a different finding threshold.
+staged `.md` / `.mdx` files with the same **6-findings** corpus-backed default.
+Override the entry in your pre-commit config when you need a stricter or more
+permissive finding threshold.
 
 The gate only **detects**. Preservation validation still requires an original and
 a rewritten file and remains a separate command:
