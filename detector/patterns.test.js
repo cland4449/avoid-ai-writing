@@ -2299,6 +2299,85 @@ test('#189: roleplay-action markers do not shift later offsets', () => {
   assertIndexedIssuesSliceExactly(source, result.issues, 'roleplay marker');
 });
 
+test('#189: interleaved preprocessing stages compose source offsets', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  for (const [name, prefix] of [
+    ['zero-width before quote', '\u200b\n> x\n> y\n'],
+    ['roleplay before quote', '*nods*\n> x\n> y\n'],
+    ['roleplay before zero-width', '*nods* later\u200b '],
+  ]) {
+    const source = prefix + prose;
+    const result = AIDetector.analyzeText(source);
+    const transition = result.issues.find((issue) => issue.type === 'transition');
+
+    assert.ok(transition, `${name}: visible prose must still be analyzed`);
+    assert.equal(transition.index, source.indexOf('Moreover'), `${name}: issue index must address source`);
+    const [region] = result.highlight_sentence_for_ai;
+    assert.ok(region.start <= transition.index && transition.index < region.end, `${name}: issue must sit inside highlight`);
+    assert.ok(region.end <= source.length, `${name}: highlight must stay within source`);
+  }
+});
+
+test('#189: overlapping normalization removals map once and keep staged semantics', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = '*nod\u200bs* *nоds* ' + prose;
+  const result = AIDetector.analyzeText(source);
+  const transition = result.issues.find((issue) => issue.type === 'transition');
+
+  assert.deepEqual(result.stats.normalization, { zeroWidth: 1, homoglyph: 1, roleplay: 2 });
+  assert.ok(transition, 'prose after normalized roleplay markers must still be analyzed');
+  assert.equal(transition.index, source.indexOf('Moreover'));
+  assert.ok(result.highlight_sentence_for_ai.every((region) => region.end <= source.length));
+});
+
+test('#189: malformed emphasis is not reclassified as roleplay', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = '**nods* **sighs* ' + prose;
+  const result = AIDetector.analyzeText(source);
+  const transition = result.issues.find((issue) => issue.type === 'transition');
+
+  assert.equal(result.stats.normalization.roleplay, 0);
+  assert.equal(transition.index, source.indexOf('Moreover'));
+});
+
+test('#189: a zero-width character inside a finding preserves its source start and region', () => {
+  const obfuscated = 'only ti\u200bme will tell';
+  const source = `Alpha beta gamma delta epsilon zeta eta theta iota kappa ${obfuscated} about systems.`;
+  const result = AIDetector.analyzeText(source);
+  const generic = result.issues.find((issue) => issue.type === 'generic-conclusion');
+
+  assert.ok(generic, 'normalization must not hide a phrase from detection');
+  assert.equal(generic.index, source.indexOf('only'));
+  assert.equal(source.slice(generic.index, generic.index + obfuscated.length), obfuscated);
+  const [region] = result.highlight_sentence_for_ai;
+  assert.ok(source.slice(region.start, region.end).includes(obfuscated));
+  assert.ok(region.end <= source.length);
+});
+
+test('#189: trailing removed markers stay outside the preceding highlight', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = `${prose} *nods*`;
+  const result = AIDetector.analyzeText(source);
+  const [region] = result.highlight_sentence_for_ai;
+
+  assert.equal(region.end, prose.length);
+  assert.equal(source.slice(region.start, region.end), prose);
+});
+
+test('#189: direct normalization handles every occurrence and mapped analysis stays linear', () => {
+  const normalized = AIDetector.normalizeText('x\u200by\u200bz еx еy');
+  assert.equal(normalized.text, 'xyz ex ey');
+  assert.deepEqual(normalized.flags, { zeroWidth: 2, homoglyph: 2, roleplay: 0 });
+
+  const dense = '\u200b'.repeat(75000)
+    + 'Alpha beta gamma delta epsilon zeta eta theta iota kappa only time will tell about systems.';
+  const started = Date.now();
+  const denseResult = AIDetector.analyzeText(dense);
+  const elapsed = Date.now() - started;
+  assert.equal(denseResult.stats.normalization.zeroWidth, 75000);
+  assert.ok(elapsed < 1000, `dense mapped analysis took ${elapsed}ms; expected a linear pass under 1000ms`);
+});
+
 test('#189: ordinary unchanged text reports native indexes and exact slices', () => {
   const source = 'It is important to note that the system works well, and it is truly robust and tough.';
   const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
