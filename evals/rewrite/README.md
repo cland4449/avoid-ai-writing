@@ -61,6 +61,12 @@ npm run eval:rewrite:validate
 node scripts/rewrite-eval.test.js
 ```
 
+Both need a git checkout: the harness pins and later re-reads the skill files
+from the baseline and candidate commits with `git show`, so a ZIP download or a
+`git archive` export cannot prepare or verify a plan. The expected case count,
+group size and split sizes live in `protocol.json`, not in the code, so they are
+covered by the protocol hash.
+
 Create a configuration outside the tracked repository. For example:
 
 ```json
@@ -93,7 +99,11 @@ node scripts/rewrite-eval.js prepare /tmp/config.json /tmp/plan.json
 The plan pins full skill commits, file contents/hashes, case and protocol hashes,
 exact prompts, provider/model settings, no-tool policy, task IDs and three
 repetitions per case/condition/model. Preparation resolves refs before freezing.
-An existing output file is never overwritten. Commit the case set, protocol and
+An existing output file is never overwritten. Every later stage re-derives the
+prompts and task list from the frozen cases, protocol, models and pinned sources,
+and re-reads the pinned files from git, so a plan edited and re-hashed by hand is
+rejected rather than trusted. If baseline and candidate resolve to the same
+commit, `prepare` warns that the plan compares the skill against itself. Commit the case set, protocol and
 candidate before comparisons; archive the plan hash with the experiment record.
 Changing any metric or prompt requires a new preregistration, not rewriting the
 old plan after seeing outputs.
@@ -118,6 +128,8 @@ Save a JSON array of result records outside the tracked repository:
   "model_version": "FROM_MODEL_CONFIG",
   "raw_output": "Complete unmodified model response",
   "final_text": "Complete unmodified model response",
+  "final_text_offset": 0,
+  "extraction_note": "Required whenever final_text is narrower than raw_output: say which section was selected and what was left out",
   "extraction_reviewer": "Reviewer identifier",
   "recorded_at": "2026-09-12T12:00:00Z",
   "duration_ms": 1000,
@@ -127,11 +139,16 @@ Save a JSON array of result records outside the tracked repository:
 
 Keep the complete provider response/usage receipt alongside these records. For
 structured skill output, a person selects the final rewrite as an exact substring
-of the raw response. Do not repair the rewrite. Preserve uncertainty/source-gap
+of the raw response, records where it starts in `final_text_offset`, and writes an
+`extraction_note` saying which section was taken and what was left out. A record
+whose `final_text` is narrower than the response and carries no note is rejected,
+and the report counts sub-span extractions per run so a reviewer can audit them.
+Do not repair the rewrite. Preserve uncertainty/source-gap
 notes in the raw output for judges. A refusal with no rewrite should remain as
 returned text and be adjudicated as such, not converted into an empty result.
 Label token estimates with `kind: "estimate"`; use `kind: "unavailable"` rather
-than fabricating counts. Record latency with a monotonic timer around the call.
+than fabricating counts. Record latency with a monotonic timer around the call. `recorded_at` must not
+predate the plan's `created_at`; a result dated before the freeze is rejected.
 A failed or missing call leaves the comparison incomplete; log the error and
 rerun that task explicitly. Do not silently choose the best of several outputs.
 
@@ -142,7 +159,10 @@ node scripts/rewrite-eval.js blind /tmp/plan.json /tmp/results.json /tmp/review.
 ```
 
 The packet randomizes output order and assigns opaque aliases. Give the packet
-to a human reviewer; keep the condition mapping private until adjudication.
+to a human reviewer; keep the condition mapping private until adjudication. The
+key is checked at report time as a one-to-one map between aliases and results:
+an extra or duplicated alias is rejected, and adjudication is counted per task,
+so a task judged twice through two aliases cannot stand in for one never judged.
 Reviewers may see the source and expected constraints but not condition labels.
 Formatting can still reveal a condition: this is label blinding, not a guarantee
 that reviewers cannot infer the prompt. The editor model must not judge its own
@@ -176,6 +196,9 @@ For preference, compare the three alternatives with the same case, model and
 repetition. Mark the preferred output `preferred`, tied best outputs `tie`, the
 others `not_preferred`; leave all three `not_rated` if preference was not assessed.
 Preference concerns usefulness and readability; it cannot erase factual errors.
+A ballot is checked at any size: more than one `preferred`, `preferred` alongside
+`tie`, or `not_rated` mixed with rated votes is rejected before the ballot is full,
+and a full ballot must be one of the three shapes above.
 Disputed/subjective judgments require human adjudication with the reason recorded.
 Keep original reviewer notes alongside the final adjudicated record.
 
@@ -185,7 +208,8 @@ node scripts/rewrite-eval.js report /tmp/plan.json /tmp/results.json /tmp/privat
 
 The report separates all three failure counts and preference counts by editor
 family, model and profile. It also reports completeness and mechanical literal
-checks. Missing judgments are not passes. Unchanged text can incur missed-edit
+checks. Missing judgments are not passes: `complete` is true only when every
+task has a result and a human judgment. Unchanged text can incur missed-edit
 failures. Mechanical checks can flag missing protected text and the demo's known
 regressions, but do not establish semantic fidelity or quality. No detector score
 is used, and no automatic rollout approval is produced.
