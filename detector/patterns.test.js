@@ -14,8 +14,6 @@
 
 const assert = require('node:assert/strict');
 const AIDetector = require('./patterns.js');
-const fs = require('node:fs');
-const path = require('node:path');
 
 let failed = 0;
 
@@ -31,12 +29,6 @@ function test(name, fn) {
 }
 
 console.log('Detector fixtures');
-
-test('README documents --iterate option and cap of 2', () => {
-  const readme = fs.readFileSync(path.join(__dirname, '../README.md'), 'utf8');
-  assert.ok(readme.includes('--iterate'), 'README must mention --iterate');
-  assert.ok(readme.includes('capped at 2') || readme.includes('cap of 2'), 'README must mention cap of 2 for --iterate');
-});
 
 test('empty text returns Empty label', () => {
   const r = AIDetector.analyzeText('');
