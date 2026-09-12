@@ -21,6 +21,8 @@ A portable writing skill for [Claude Code](https://docs.anthropic.com/en/docs/cl
 - **Detect** — flags AI patterns without rewriting. Shows which flags are real problems vs. judgment calls. Useful when patterns might be intentional, when auditing content you don't want altered, or when you just want a quick scan.
 - **Edit** — edits a prose file in place (via the Edit tool) with minimal, targeted changes, preserving passages that are already human. Source code, configuration, and generated data are refused because prose rewrites can corrupt structured content. Returns an edits-made + verification report, not the full file.
 
+An optional **iterate-to-convergence pass** (`--iterate N`, capped at 2) repeats the audit and rewrite cycle until no patterns remain or N passes are reached. Use this when asked to keep going until clean; pass 2 clears remaining tells while further passes rarely find more.
+
 An optional **voice profile** (casual / professional / technical / warm / blunt) sets how the prose should sound, independent of the audience context profile.
 
 ## Quick demo
