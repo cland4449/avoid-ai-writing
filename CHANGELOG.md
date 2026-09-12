@@ -12,6 +12,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Preserve detector issue indexes and sentence-highlight ranges against the original source after blockquote and normalization preprocessing (#189).
 - Include every observed corpus register in `corpus.js list`; preserve the preferred accepted-register order and sort additional registers deterministically.
 - Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
   voice-profile link that led to the triggering section.

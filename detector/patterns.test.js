@@ -2185,6 +2185,233 @@ test('dev-blog-boilerplate: ordinary prose stays clean', () => {
   assert.equal(hits.length, 0, `false positives: ${JSON.stringify(hits.map((i) => i.text))}`);
 });
 
+// ── Issue #189 — preserve source offsets through preprocessing ─────────
+// Preprocessing that changes string length (plain-mode blockquote stripping,
+// zero-width-character and *roleplay-action* removal) must not shift the
+// issue.index and highlight-range coordinates reported against the caller's
+// original source. For every index-carrying issue, the source slice at its
+// coordinates must reproduce its text exactly; highlight regions must land on
+// real source chars. Masking stages are already covered by #123 — these tests
+// pin the length-changing stages.
+function assertIndexedIssuesSliceExactly(source, issues, label) {
+  for (const issue of issues) {
+    if (!Number.isInteger(issue.index)) continue;
+    assert.equal(
+      source.slice(issue.index, issue.index + issue.text.length),
+      issue.text,
+      `${label}: source.slice(index, index+len) must reproduce the reported ${issue.type} text`,
+    );
+  }
+}
+
+test('#189: plain-mode multiline blockquote (LF) keeps issue and highlight offsets on source', () => {
+  const source = '> quoted line one\n> quoted line two\n\nIt is important to note that the system works well and the team shipped it.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+  const filler = result.issues.find((issue) => issue.type === 'filler');
+
+  assert.equal(result.stats.quotedLines, 2);
+  assert.ok(filler, 'prose after the stripped quote must still be analyzed');
+  assert.equal(filler.index, source.indexOf('It is important'), 'filler index must address the source');
+  assert.equal(source.slice(filler.index, filler.index + filler.text.length), filler.text);
+  assertIndexedIssuesSliceExactly(source, result.issues, 'plain LF blockquote');
+
+  const [region] = result.highlight_sentence_for_ai;
+  assert.deepEqual([region.start, region.end], [36, 112], 'highlight must span from the newline before the sentence to the end');
+  assert.equal(
+    source.slice(region.start, region.end),
+    '\nIt is important to note that the system works well and the team shipped it.',
+  );
+});
+
+test('#189: plain-mode multiline blockquote (CRLF) keeps issue and highlight offsets on source', () => {
+  const source = '> quoted line one\r\n> quoted line two\r\n\r\nIt is important to note that the system works well and the team shipped it.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+  const filler = result.issues.find((issue) => issue.type === 'filler');
+
+  assert.equal(result.stats.quotedLines, 2);
+  assert.ok(filler, 'prose after the stripped quote must still be analyzed');
+  assert.equal(filler.index, source.indexOf('It is important'), 'filler index must address the source');
+  assert.equal(source.slice(filler.index, filler.index + filler.text.length), filler.text);
+  assertIndexedIssuesSliceExactly(source, result.issues, 'plain CRLF blockquote');
+
+  const [region] = result.highlight_sentence_for_ai;
+  assert.deepEqual([region.start, region.end], [39, 115], 'the leading \\r of the CRLF blank line must be accounted for too');
+  assert.equal(
+    source.slice(region.start, region.end),
+    '\nIt is important to note that the system works well and the team shipped it.',
+  );
+});
+
+test('#189: rendered-markdown multiline blockquotes keep offsets on source (LF and CRLF)', () => {
+  const prose = 'It is important to note that the system works well and the team shipped it.';
+  for (const [name, quote] of [
+    ['LF', '> quoted line one\n> quoted line two\n\n'],
+    ['CRLF', '> quoted line one\r\n> quoted line two\r\n\r\n'],
+  ]) {
+    const source = quote + prose;
+    const result = AIDetector.analyzeText(source, { sourceMode: 'rendered-markdown' });
+    const filler = result.issues.find((issue) => issue.type === 'filler');
+
+    assert.equal(result.stats.quotedLines, 2, `${name}: both quote lines counted`);
+    assert.ok(filler, `${name}: visible prose after the masked quote must still be analyzed`);
+    assert.equal(filler.index, quote.length, `${name}: masked quote must not shift the filler`);
+    assertIndexedIssuesSliceExactly(source, result.issues, `rendered ${name}`);
+
+    const [region] = result.highlight_sentence_for_ai;
+    assert.deepEqual([region.start, region.end], [quote.length, source.length], `${name}: highlight spans the visible prose`);
+    assert.equal(source.slice(region.start, region.end), prose);
+  }
+});
+
+test('#189: zero-width characters do not shift later offsets', () => {
+  const source = 'Powerful is the new baseline​‌ and truly robust and tough.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+  const truly = result.issues.find((issue) => issue.type === 'hollow-intensifier' && issue.text === 'truly');
+
+  assert.equal(result.stats.normalization.zeroWidth, 2);
+  assert.ok(truly, 'word after the zero-width chars must still be flagged');
+  assert.equal(truly.index, source.indexOf('truly'));
+  assert.equal(source.slice(truly.index, truly.index + truly.text.length), truly.text);
+  assertIndexedIssuesSliceExactly(source, result.issues, 'zero-width');
+});
+
+test('#189: zero-width chars separated by content record exact source runs', () => {
+  const source = 'This system works well​ across the board‌ and truly robust and tough for the final release today.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+  const truly = result.issues.find((issue) => issue.type === 'hollow-intensifier' && issue.text === 'truly');
+
+  assert.equal(result.stats.normalization.zeroWidth, 2);
+  assert.ok(truly, 'word after both separated zero-width chars must still be flagged');
+  assert.equal(truly.index, source.indexOf('truly'));
+  assert.equal(source.slice(truly.index, truly.index + truly.text.length), truly.text);
+  assertIndexedIssuesSliceExactly(source, result.issues, 'separated zero-width');
+});
+
+test('#189: roleplay-action markers do not shift later offsets', () => {
+  const source = 'It is important to note that the system works well. *nods* This is truly robust and the team shipped it.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+  const truly = result.issues.find((issue) => issue.type === 'hollow-intensifier' && issue.text === 'truly');
+
+  assert.equal(result.stats.normalization.roleplay, 1);
+  assert.ok(truly, 'word after the *nods* marker must still be flagged');
+  assert.equal(truly.index, source.indexOf('truly'));
+  assert.equal(source.slice(truly.index, truly.index + truly.text.length), truly.text);
+  assertIndexedIssuesSliceExactly(source, result.issues, 'roleplay marker');
+});
+
+test('#189: interleaved preprocessing stages compose source offsets', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  for (const [name, prefix] of [
+    ['zero-width before quote', '\u200b\n> x\n> y\n'],
+    ['roleplay before quote', '*nods*\n> x\n> y\n'],
+    ['roleplay before zero-width', '*nods* later\u200b '],
+  ]) {
+    const source = prefix + prose;
+    const result = AIDetector.analyzeText(source);
+    const transition = result.issues.find((issue) => issue.type === 'transition');
+
+    assert.ok(transition, `${name}: visible prose must still be analyzed`);
+    assert.equal(transition.index, source.indexOf('Moreover'), `${name}: issue index must address source`);
+    const [region] = result.highlight_sentence_for_ai;
+    assert.ok(region.start <= transition.index && transition.index < region.end, `${name}: issue must sit inside highlight`);
+    assert.ok(region.end <= source.length, `${name}: highlight must stay within source`);
+  }
+});
+
+test('#189: overlapping normalization removals map once and keep staged semantics', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = '*nod\u200bs* *nоds* ' + prose;
+  const result = AIDetector.analyzeText(source);
+  const transition = result.issues.find((issue) => issue.type === 'transition');
+
+  assert.deepEqual(result.stats.normalization, { zeroWidth: 1, homoglyph: 1, roleplay: 2 });
+  assert.ok(transition, 'prose after normalized roleplay markers must still be analyzed');
+  assert.equal(transition.index, source.indexOf('Moreover'));
+  assert.ok(result.highlight_sentence_for_ai.every((region) => region.end <= source.length));
+});
+
+test('#189: malformed emphasis is not reclassified as roleplay', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = '**nods* **sighs* ' + prose;
+  const result = AIDetector.analyzeText(source);
+  const transition = result.issues.find((issue) => issue.type === 'transition');
+
+  assert.equal(result.stats.normalization.roleplay, 0);
+  assert.equal(transition.index, source.indexOf('Moreover'));
+});
+
+test('#189: a zero-width character inside a finding preserves its source start and region', () => {
+  const obfuscated = 'only ti\u200bme will tell';
+  const source = `Alpha beta gamma delta epsilon zeta eta theta iota kappa ${obfuscated} about systems.`;
+  const result = AIDetector.analyzeText(source);
+  const generic = result.issues.find((issue) => issue.type === 'generic-conclusion');
+
+  assert.ok(generic, 'normalization must not hide a phrase from detection');
+  assert.equal(generic.index, source.indexOf('only'));
+  assert.equal(source.slice(generic.index, generic.index + obfuscated.length), obfuscated);
+  const [region] = result.highlight_sentence_for_ai;
+  assert.ok(source.slice(region.start, region.end).includes(obfuscated));
+  assert.ok(region.end <= source.length);
+});
+
+test('#189: trailing removed markers stay outside the preceding highlight', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const source = `${prose} *nods*`;
+  const result = AIDetector.analyzeText(source);
+  const [region] = result.highlight_sentence_for_ai;
+
+  assert.equal(region.end, prose.length);
+  assert.equal(source.slice(region.start, region.end), prose);
+});
+
+test('#189: direct normalization handles every occurrence and mapped analysis stays linear', () => {
+  const normalized = AIDetector.normalizeText('x\u200by\u200bz еx еy');
+  assert.equal(normalized.text, 'xyz ex ey');
+  assert.deepEqual(normalized.flags, { zeroWidth: 2, homoglyph: 2, roleplay: 0 });
+
+  const dense = '\u200b'.repeat(75000)
+    + 'Alpha beta gamma delta epsilon zeta eta theta iota kappa only time will tell about systems.';
+  const started = Date.now();
+  const denseResult = AIDetector.analyzeText(dense);
+  const elapsed = Date.now() - started;
+  assert.equal(denseResult.stats.normalization.zeroWidth, 75000);
+  assert.ok(elapsed < 1000, `dense mapped analysis took ${elapsed}ms; expected a linear pass under 1000ms`);
+});
+
+test('#189: ordinary unchanged text reports native indexes and exact slices', () => {
+  const source = 'It is important to note that the system works well, and it is truly robust and tough.';
+  const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+
+  for (const issue of result.issues) {
+    if (!Number.isInteger(issue.index)) continue;
+    assert.equal(issue.index, source.indexOf(issue.text), `${issue.type}: unchanged text keeps a native index`);
+  }
+  assertIndexedIssuesSliceExactly(source, result.issues, 'ordinary text');
+});
+
+test('#189: highlight regions land on real source bytes and slice back to the flagged sentence', () => {
+  for (const [name, lineEnd] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+    const source = [
+      '> quoted line one',
+      '> quoted line two',
+      '',
+      'It is important to note that the system works well and the team shipped it.',
+    ].join(lineEnd);
+
+    const result = AIDetector.analyzeText(source, { sourceMode: 'plain' });
+    const filler = result.issues.find((issue) => issue.type === 'filler');
+    const [region] = result.highlight_sentence_for_ai;
+
+    assert.ok(Number.isInteger(region.start) && Number.isInteger(region.end), `${name}: region coords are integers`);
+    assert.ok(region.start < region.end && region.end <= source.length, `${name}: region stays inside source bounds`);
+    assert.ok(
+      source.slice(region.start, region.end).includes('It is important to note'),
+      `${name}: source slice at the region covers the flagged sentence`,
+    );
+    assert.ok(region.start <= filler.index && filler.index < region.end, `${name}: issue index sits inside the highlight`);
+  }
+});
+
 if (failed > 0) {
   console.error(`\n${failed} test(s) failed`);
   process.exit(1);
