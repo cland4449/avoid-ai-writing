@@ -2448,6 +2448,98 @@ test('#189: highlight regions land on real source bytes and slice back to the fl
   }
 });
 
+test('#235: sentence spans match the former regex scan on every boundary shape', () => {
+  // Oracle: the regex the single-pass scanner replaced. Every flagged sentence
+  // below is isolated by at least two clean sentences so region merging never
+  // joins them, and each region must reproduce the oracle span exactly.
+  const oracle = (text) => {
+    const spans = [];
+    const re = /[^.!?]+[.!?]+|\S[^.!?]*$/g;
+    let m;
+    while ((m = re.exec(text)) !== null) spans.push([m.index, m.index + m[0].length, m[0]]);
+    return spans;
+  };
+  const clean = 'The bus was late. We waited by the shop.';
+  const shapes = [
+    'We must delve into it.',
+    '   We must delve into it?!',
+    '\n\nWe must delve into it...',
+    'We must delve into it',
+    ' We must delve into it.',
+    'We must delve into it.\r\n',
+  ];
+  for (const flagged of shapes) {
+    for (const trailing of ['', ' ', '\n\n', '   \n  ']) {
+      const text = `${clean} ${flagged} ${clean}${trailing}`;
+      const expected = oracle(text).filter(([, , raw]) => raw.includes('delve'));
+      assert.equal(expected.length, 1, `oracle isolates one flagged span in ${JSON.stringify(text)}`);
+      const [[start, end]] = expected;
+      const regions = AIDetector.analyzeText(text, { sourceMode: 'plain' }).highlight_sentence_for_ai;
+      assert.equal(regions.length, 1, `one region for ${JSON.stringify(text)}: ${JSON.stringify(regions)}`);
+      assert.equal(regions[0].start, start, `region start for ${JSON.stringify(text)}`);
+      assert.equal(regions[0].end, end, `region end for ${JSON.stringify(text)}`);
+    }
+  }
+
+  // Terminator-only prefixes and a document with no terminator at all. Each
+  // stays above the ten-word gate so the document is scored.
+  for (const text of [
+    `...We must delve into it. ${clean} ${clean}`,
+    `. We must delve into it. ${clean} ${clean}`,
+    'We must delve into it and then keep going for a good while longer without stopping',
+  ]) {
+    const [[start, end]] = oracle(text).filter(([, , raw]) => raw.includes('delve'));
+    const regions = AIDetector.analyzeText(text, { sourceMode: 'plain' }).highlight_sentence_for_ai;
+    assert.equal(regions.length, 1, `one region for ${JSON.stringify(text)}`);
+    assert.deepEqual([regions[0].start, regions[0].end], [start, end], `span for ${JSON.stringify(text)}`);
+  }
+});
+
+test('#235: analysis time grows linearly on whitespace-heavy input', () => {
+  // Ratio, not budget: a linear scan takes about 4x longer on 4x the input;
+  // the quadratic regexes this replaces took about 16x. The floor keeps
+  // timer noise on a fast machine from turning a few milliseconds into a
+  // meaningless ratio.
+  const timeFor = (build) => {
+    let best = Infinity;
+    for (let run = 0; run < 3; run += 1) {
+      const text = build();
+      const started = performance.now();
+      AIDetector.analyzeText(text, { sourceMode: text.startsWith('<!--') ? 'rendered-markdown' : 'plain' });
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  const cases = [
+    ['trailing whitespace, no terminator', (n) => `${' '.repeat(n)}one two three four five six seven eight nine ten`],
+    ['blank-line run before prose', (n) => `${'\n'.repeat(n)}Interesting part: it still works. Another sentence follows here.`],
+    ['masked HTML comments', (n) => `${'<!-- ` -->\n'.repeat(n / 10)}one two three four five six seven eight nine ten`],
+    ['masked HTML comments before a terminated sentence', (n) => `${'<!-- x -->\n'.repeat(n / 10)}one two three four five six seven eight nine ten. Then more.`],
+  ];
+  for (const [name, build] of cases) {
+    const small = Math.max(timeFor(() => build(40000)), 15);
+    const large = timeFor(() => build(160000));
+    assert.ok(
+      large < small * 8,
+      `${name}: 4x input took ${(large / small).toFixed(1)}x longer (${small.toFixed(1)}ms vs ${large.toFixed(1)}ms)`,
+    );
+  }
+});
+
+test('#235: table delimiter rows still mask with surrounding whitespace and CR', () => {
+  const table = [
+    '  | Setting | Legacy value |  ',
+    '  | --- | --- |  \r',
+    '  | package | code-base |  ',
+  ].join('\n');
+  const hits = AIDetector.analyzeText(table).issues.filter((issue) => issue.type === 'unnecessary-hyphenation');
+  assert.equal(hits.length, 0, `padded table rows stay protected: ${JSON.stringify(hits)}`);
+
+  const notTable = 'A dash line --- followed by a code-base mention that is ordinary prose here.\n| --- |';
+  const prose = AIDetector.analyzeText(notTable).issues.filter((issue) => issue.type === 'unnecessary-hyphenation');
+  assert.equal(prose.length, 1, `prose next to a single-cell delimiter still edits: ${JSON.stringify(prose)}`);
+});
+
 if (failed > 0) {
   console.error(`\n${failed} test(s) failed`);
   process.exit(1);
