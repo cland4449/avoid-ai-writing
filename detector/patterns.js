@@ -44,17 +44,67 @@ const AIDetector = (() => {
   };
   const GREEK_LOOKALIKES = { 'ο': 'o', 'Ο': 'O', 'α': 'a', 'Α': 'A', 'ρ': 'p', 'Ρ': 'P' };
 
-  function normalizeText(text) {
+  // ─── Source-coordinate mapping (issue #189) ─────────────────────────
+  //
+  // Each entry maps one code unit in the working string to the matching
+  // code unit in the caller's source. Deletion passes copy the entries for
+  // retained characters once, so interleaved or overlapping removals cannot
+  // double-count offsets. Masking and homoglyph replacement keep their input
+  // length and therefore keep the current map unchanged.
+  function identitySourceMap(length) {
+    return Array.from({ length }, (_, index) => index);
+  }
+
+  function appendMapRange(target, source, start, end) {
+    for (let index = start; index < end; index += 1) target.push(source[index]);
+  }
+
+  function remapFindingsToSource(issues, regions, sourceMap) {
+    for (const issue of issues) {
+      if (Number.isInteger(issue.index)) issue.index = sourceMap[issue.index];
+    }
+    for (const region of regions) {
+      region.start = sourceMap[region.start];
+      region.end = sourceMap[region.end - 1] + 1;
+    }
+  }
+
+  const ZERO_WIDTH_RE = /[​-‍﻿⁠]/u;
+  const ZERO_WIDTH_GLOBAL_RE = /[​-‍﻿⁠]/gu;
+  const HOMOGLYPH_GLOBAL_RE = /[Ѐ-ӿͰ-Ͽ]/gu;
+  const ROLEPLAY_VERBS_RE = /^(?:nods|sighs|laughs|smiles|frowns|shrugs|grins|winks|chuckles|gasps|pauses|thinks|wonders|whispers|shouts|gestures|raises|leans|turns|looks|glances|smirks|blinks|nodding|sighing|laughing|smiling|thinking|gesturing)\b/i;
+  const ROLEPLAY_MARKER_RE = /(?<!\*)\*([^*\n]{1,80}?)\*(?!\*)/gu;
+
+  function normalizeText(text, sourceMap) {
     const flags = { zeroWidth: 0, homoglyph: 0, roleplay: 0 };
     let out = text;
+    let map = Array.isArray(sourceMap) ? sourceMap : null;
 
     // 1. Strip zero-width chars (ZWSP U+200B, ZWNJ U+200C, ZWJ U+200D,
     //    BOM U+FEFF, word joiner U+2060).
-    out = out.replace(/[​-‍﻿⁠]/g, () => { flags.zeroWidth++; return ''; });
+    if (map) {
+      const chars = [];
+      const nextMap = [];
+      for (let i = 0; i < out.length; i += 1) {
+        if (ZERO_WIDTH_RE.test(out[i])) {
+          flags.zeroWidth += 1;
+          continue;
+        }
+        chars.push(out[i]);
+        nextMap.push(map[i]);
+      }
+      out = chars.join('');
+      map = nextMap;
+    } else {
+      out = out.replace(ZERO_WIDTH_GLOBAL_RE, () => {
+        flags.zeroWidth += 1;
+        return '';
+      });
+    }
 
     // 2. Swap Cyrillic / Greek Latin-lookalike chars back to Latin so
     //    pattern matching catches obfuscated tokens.
-    out = out.replace(/[Ѐ-ӿͰ-Ͽ]/g, (m) => {
+    out = out.replace(HOMOGLYPH_GLOBAL_RE, (m) => {
       const swap = CYRILLIC_LOOKALIKES[m] ?? GREEK_LOOKALIKES[m];
       if (swap) { flags.homoglyph++; return swap; }
       return m;
@@ -66,13 +116,34 @@ const AIDetector = (() => {
     //    artifact shape. Markdown `**bold**` is rejected by the
     //    lookbehind/lookahead; legitimate multi-word `*italic*` is
     //    preserved because the verb whitelist is narrow.
-    const ROLEPLAY_VERBS = /^(?:nods|sighs|laughs|smiles|frowns|shrugs|grins|winks|chuckles|gasps|pauses|thinks|wonders|whispers|shouts|gestures|raises|leans|turns|looks|glances|smirks|blinks|nodding|sighing|laughing|smiling|thinking|gesturing)\b/i;
-    out = out.replace(/(?<!\*)\*([^*\n]{1,80}?)\*(?!\*)/gu, (m, inner) => {
-      if (ROLEPLAY_VERBS.test(inner)) { flags.roleplay++; return ''; }
-      return m;
-    });
+    if (map) {
+      const chars = [];
+      const nextMap = [];
+      const matcher = new RegExp(ROLEPLAY_MARKER_RE.source, ROLEPLAY_MARKER_RE.flags);
+      let cursor = 0;
+      let match;
+      while ((match = matcher.exec(out)) !== null) {
+        if (!ROLEPLAY_VERBS_RE.test(match[1])) continue;
+        chars.push(out.slice(cursor, match.index));
+        appendMapRange(nextMap, map, cursor, match.index);
+        flags.roleplay += 1;
+        cursor = match.index + match[0].length;
+      }
+      chars.push(out.slice(cursor));
+      appendMapRange(nextMap, map, cursor, map.length);
+      out = chars.join('');
+      map = nextMap;
+    } else {
+      out = out.replace(ROLEPLAY_MARKER_RE, (m, inner) => {
+        if (ROLEPLAY_VERBS_RE.test(inner)) {
+          flags.roleplay += 1;
+          return '';
+        }
+        return m;
+      });
+    }
 
-    return { text: out, flags };
+    return map ? { text: out, flags, sourceMap: map } : { text: out, flags };
   }
 
   // ─── Tier 1: Always flag ───────────────────────────────────────────
@@ -1018,17 +1089,45 @@ const AIDetector = (() => {
   // Keep the historical deletion behavior for default plain mode. Paragraph-
   // scoped rules depend on the surrounding lines being rejoined exactly this
   // way, so changing this prepass would change scores for existing callers.
-  function stripMultilineBlockquotes(text) {
+  function stripMultilineBlockquotes(text, sourceMap) {
     const rawLines = text.split(/\r?\n/);
     const isQuote = rawLines.map((line) => /^\s*>\s/.test(line));
     const stripIndexes = new Set();
     for (let i = 0; i < rawLines.length; i += 1) {
       if (isQuote[i] && ((isQuote[i - 1] && i > 0) || isQuote[i + 1])) stripIndexes.add(i);
     }
-    return {
-      text: rawLines.filter((_, i) => !stripIndexes.has(i)).join('\n'),
+    const kept = rawLines
+      .map((_, index) => index)
+      .filter((index) => !stripIndexes.has(index));
+    const result = {
+      text: kept.map((index) => rawLines[index]).join('\n'),
       quotedLines: stripIndexes.size,
     };
+    if (!Array.isArray(sourceMap)) return result;
+
+    const lineStarts = [];
+    let offset = 0;
+    for (let i = 0; i < rawLines.length; i += 1) {
+      lineStarts.push(offset);
+      offset += rawLines[i].length;
+      if (i < rawLines.length - 1) {
+        if (text[offset] === '\r') offset += 1;
+        if (text[offset] === '\n') offset += 1;
+      }
+    }
+
+    const mapped = [];
+    for (let i = 0; i < kept.length; i += 1) {
+      const lineIndex = kept[i];
+      const start = lineStarts[lineIndex];
+      appendMapRange(mapped, sourceMap, start, start + rawLines[lineIndex].length);
+      if (i < kept.length - 1) {
+        const separatorStart = start + rawLines[lineIndex].length;
+        const newlineIndex = text[separatorStart] === '\r' ? separatorStart + 1 : separatorStart;
+        mapped.push(sourceMap[newlineIndex]);
+      }
+    }
+    return { ...result, sourceMap: mapped };
   }
 
   function maskTopLevelIndentedCode(chars, { listAware = false, lineSource = null } = {}) {
@@ -1244,8 +1343,8 @@ const AIDetector = (() => {
   // ─── Title Case Section Headers in non-technical prose ─────────────
   // "Strategic Negotiations And Key Partnerships" — every content word
   // capitalized. Acceptable in API docs, ML papers, news headlines. Tell
-  // in marketing/personal/blog prose. Gated to "personal" / "marketing"
-  // context modes (technical mode skips this check).
+  // in marketing/personal/blog prose. Skipped when contextMode is
+  // 'technical'; runs for general, marketing, and personal.
   //
   // The optional `#{1,6}` prefix is load-bearing (#62): without it the `^[A-Z]`
   // anchor required the line to START with a capital, so `## Benefits And
@@ -1423,14 +1522,19 @@ const AIDetector = (() => {
       return { ...buildV2Defaults('UNSCORED', 'low'), score: 0, label: 'Empty', issues: [], stats: {}, tooShort: true };
     }
 
-    // Context mode gates rules that are noisy in technical writing. Modes:
+    // Map each working-string code unit back to the caller's source. Every
+    // length-changing preprocessing stage composes this map as it removes
+    // characters, and results are translated before they leave the function.
+    let sourceMap = identitySourceMap(text.length);
+
+    // Context mode selects context-appropriate flagging. Accepted values:
     //   'general' (default) — full ruleset
     //   'technical' — skip title-case headers; individual prose-only rules
-    //                 apply their own technical-context gates
-    //   'marketing' — full ruleset + boost on formulaic-opener / future-narrative
-    //   'personal'  — full ruleset, normal weights
-    // Mode is purely a soft gate; nothing is silently suppressed without
-    // being reflected in stats.contextMode for transparency.
+    //                 apply their own technical-context gates (only mode
+    //                 that currently changes scoring)
+    //   'marketing' — accepted; recorded in stats; scores same as general
+    //   'personal'  — accepted; recorded in stats; scores same as general
+    // Invalid values fall back to 'general' with stats.contextModeFallback set.
     // Mode validation: an unknown string (e.g. typo "tecnical") would
     // otherwise silently downgrade to general-mode behavior. Coerce to
     // 'general' and surface the original value in stats for traceability.
@@ -1464,15 +1568,17 @@ const AIDetector = (() => {
     // keeps later issue and highlight offsets aligned with the source file.
     const blockquotes = sourceMode === 'rendered-markdown'
       ? maskMultilineBlockquotes(text)
-      : stripMultilineBlockquotes(text);
+      : stripMultilineBlockquotes(text, sourceMap);
     text = blockquotes.text;
+    if (blockquotes.sourceMap) sourceMap = blockquotes.sourceMap;
     const { quotedLines } = blockquotes;
 
     // Pre-pass: strip bypass-trick chars before pattern matching so
-    // "delve" with a Cyrillic 'е' still hits Tier 1. Original text is
-    // preserved so reported `match.index` values remain visually accurate.
-    const norm = normalizeText(text);
+    // "delve" with a Cyrillic 'е' still hits Tier 1. Compose the map while
+    // deleting characters so later offsets still address the source.
+    const norm = normalizeText(text, sourceMap);
     text = norm.text;
+    sourceMap = norm.sourceMap;
 
     const wordCount = countWords(text);
     if (wordCount < 10) {
@@ -2181,6 +2287,11 @@ const AIDetector = (() => {
       wordCount,
       denseAIVocab,
     });
+
+    // Translate both dense issue indexes and half-open highlight boundaries.
+    // Mapping the region end from its final retained code unit avoids pulling
+    // a later removed roleplay marker into the highlighted source slice.
+    remapFindingsToSource(deduped, regions, sourceMap);
 
     return {
       // Legacy fields preserved for existing callers.

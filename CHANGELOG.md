@@ -12,11 +12,16 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
-- Make rendered-Markdown HTML comment masking linear: run `maskCode()` once per document, refresh code and list-aware scans only when a removed comment contained backticks or list markers, and scan for openings in a single forward pass (#190).
+- Preserve detector issue indexes and sentence-highlight ranges against the original source after blockquote and normalization preprocessing (#189).
+- Include every observed corpus register in `corpus.js list`; preserve the preferred accepted-register order and sort additional registers deterministically.
+- Make rendered-Markdown HTML comment masking linear with a source-order scanner that preserves fenced, inline, and indented-code precedence without rescanning the document per comment (#190).
 - Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
   voice-profile link that led to the triggering section.
 - Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the
   engine returns, the `UNSCORED` classification on early-exit paths, and all four accepted `contextMode` values.
+- Align `contextMode` comments in `detector/patterns.js` and mode list in
+  `detector/CATEGORIES.md` with runtime behavior: four accepted modes, only
+  `technical` changes flagging (#173).
 
 ## [3.34.0] — 2026-09-11
 
