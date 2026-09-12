@@ -17,6 +17,9 @@ All notable changes to this project are documented here.
   voice-profile link that led to the triggering section.
 - Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the
   engine returns, the `UNSCORED` classification on early-exit paths, and all four accepted `contextMode` values.
+- Align `contextMode` comments in `detector/patterns.js` and mode list in
+  `detector/CATEGORIES.md` with runtime behavior: four accepted modes, only
+  `technical` changes flagging (#173).
 
 ## [3.34.0] — 2026-09-11
 
