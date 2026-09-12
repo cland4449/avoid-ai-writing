@@ -2486,12 +2486,38 @@ test('#235: sentence spans match the former regex scan on every boundary shape',
   for (const text of [
     `...We must delve into it. ${clean} ${clean}`,
     `. We must delve into it. ${clean} ${clean}`,
+    ...['.', '?!', '...!?'].flatMap((prefix) => [
+      `${prefix}We must delve into it and then keep going for a good while longer`,
+      `${prefix}\r\nWe must delve into it and then keep going for a good while longer`,
+      `${prefix}We must delve into it. ${clean} ${clean}`,
+    ]),
     'We must delve into it and then keep going for a good while longer without stopping',
   ]) {
     const [[start, end]] = oracle(text).filter(([, , raw]) => raw.includes('delve'));
     const regions = AIDetector.analyzeText(text, { sourceMode: 'plain' }).highlight_sentence_for_ai;
     assert.equal(regions.length, 1, `one region for ${JSON.stringify(text)}`);
     assert.deepEqual([regions[0].start, regions[0].end], [start, end], `span for ${JSON.stringify(text)}`);
+  }
+});
+
+test('#260: punctuation-prefix analysis scales without rescanning each suffix', () => {
+  const timeFor = (n, ending) => {
+    const text = '.!?'.repeat(n) + ' We must delve into it and then keep going for a good while longer' + ending;
+    let best = Infinity;
+    for (let run = 0; run < 3; run += 1) {
+      const start = performance.now();
+      AIDetector.analyzeText(text, { sourceMode: 'plain' });
+      best = Math.min(best, performance.now() - start);
+    }
+    return best;
+  };
+  for (const ending of ['', '.']) {
+    // Cover both the trailing-fragment fallback and a later terminator.
+    timeFor(100, ending);
+    const small = Math.max(timeFor(3000, ending), 5);
+    const large = timeFor(12000, ending);
+    assert.ok(large < small * 8,
+      `punctuation prefix (${JSON.stringify(ending)}): 4x input took ${(large / small).toFixed(1)}x time (${small.toFixed(1)}ms vs ${large.toFixed(1)}ms)`);
   }
 });
 

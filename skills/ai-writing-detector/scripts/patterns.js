@@ -2441,14 +2441,17 @@ const AIDetector = (() => {
         break;
       }
       if (run.index === pos) {
-        // A terminator with no sentence body before it only counts as the
-        // trailing fragment when nothing after it ends a sentence.
-        SENTENCE_TERMINATOR_RUN.lastIndex = pos + 1;
+        // Skip the entire bodyless run, not one character at a time: matching
+        // every remaining suffix would make a long punctuation run quadratic.
+        // If no later sentence terminator exists, the former regex's trailing
+        // alternative starts at the LAST terminator of this run.
+        const runEnd = pos + run[0].length;
+        SENTENCE_TERMINATOR_RUN.lastIndex = runEnd;
         if (SENTENCE_TERMINATOR_RUN.exec(text) === null) {
-          spans.push([pos, length]);
+          spans.push([runEnd - 1, length]);
           break;
         }
-        pos += 1;
+        pos = runEnd;
         continue;
       }
       const end = run.index + run[0].length;
