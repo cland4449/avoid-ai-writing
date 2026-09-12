@@ -43,8 +43,11 @@ seeds `clear-edit-04`.
 Cases record atomic claims, exact protected spans, allowed edits, expected
 preserve/change decisions, provenance and review guidance. Their wording is
 original and MIT-licensed; there are no private drafts. Both splits cover all
-six skill profiles. There are 36 development cases and 12 held-out cases, with
-disjoint fictional author/document IDs. Short fixtures diagnose specific
+six skill profiles. There are 36 development cases and 12 held-out cases. Cases
+are grouped under twelve fictional authors and twenty-four fictional documents,
+several cases to each, and no author or document appears in both splits, so the
+leakage check tests something real. Held-out sources reuse no Tier 1 word,
+template phrase, or numeric figure from a development source. Short fixtures diagnose specific
 mistakes; they do not represent the distribution of real production writing.
 
 The pilot exercises rewrite and prose-edit decisions. It does not test actual
