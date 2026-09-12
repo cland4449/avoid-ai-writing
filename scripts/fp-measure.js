@@ -254,7 +254,17 @@ function report(s, units) {
 
 function main() {
   const args = process.argv.slice(2);
-  const unit = args.includes('--unit') ? args[args.indexOf('--unit') + 1] : 'paragraph';
+  let unit = 'paragraph';
+  const unitIdx = args.indexOf('--unit');
+  if (unitIdx !== -1) {
+    const val = args[unitIdx + 1];
+    if (val !== 'paragraph' && val !== 'document') {
+      console.error('Error: Invalid --unit option. Accepted values are "paragraph" and "document".');
+      process.exit(2);
+    }
+    unit = val;
+  }
+
   const measured = measure({ unit });
   const s = summarize(measured);
 
