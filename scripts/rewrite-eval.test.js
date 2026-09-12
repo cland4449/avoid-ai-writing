@@ -5,6 +5,11 @@ const cases = require('../evals/rewrite/cases.json');
 const protocol = require('../evals/rewrite/protocol.json');
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const throwsWith = (fn, pattern, label) => assert.throws(fn, pattern, `${label}: expected rejection matching ${pattern}`);
+const framed = (text, { prefix = '', suffix = '', eol = '\n' } = {}) => {
+  const { open, close } = protocol.final_text_markers;
+  const raw_output = `${prefix ? `${prefix}${eol}` : ''}${open}${eol}${text}${eol}${close}${suffix ? `${eol}${suffix}` : ''}`;
+  return { raw_output, final_text: text, final_text_offset: raw_output.indexOf(text, raw_output.indexOf(open) + open.length) };
+};
 
 // ── Case corpus ──────────────────────────────────────────────────────────
 validateCases(cases, protocol);
@@ -12,6 +17,9 @@ validateCases(cases, protocol);
 const leaked = clone(cases);
 leaked.find((c) => c.split === 'heldout').author_id = leaked.find((c) => c.split === 'development').author_id;
 throwsWith(() => validateCases(leaked, protocol), /leakage/, 'author leakage');
+const leakedDocument = clone(cases);
+leakedDocument.find((c) => c.split === 'heldout').document_id = leakedDocument.find((c) => c.split === 'development').document_id;
+throwsWith(() => validateCases(leakedDocument, protocol), /leakage/, 'document leakage');
 
 const duplicate = clone(cases);
 duplicate[1].id = duplicate[0].id;
@@ -75,6 +83,16 @@ const noModes = clone(protocol);
 delete noModes.modes;
 throwsWith(() => validateCases(cases, noModes), /protocol.modes required/, 'missing protocol modes');
 
+const noMarkers = clone(protocol);
+delete noMarkers.final_text_markers;
+throwsWith(() => validateCases(cases, noMarkers), /final_text_markers required/, 'missing final-text markers');
+const overlappingMarkers = clone(protocol);
+overlappingMarkers.final_text_markers.close = `${overlappingMarkers.final_text_markers.open}>`;
+throwsWith(() => validateCases(cases, overlappingMarkers), /distinct and non-overlapping/, 'overlapping final-text markers');
+const markerInSource = clone(cases);
+markerInSource[0].source += ` ${protocol.final_text_markers.open}`;
+throwsWith(() => validateCases(markerInSource, protocol), /reserved final-text marker/, 'marker in source');
+
 // ── Plan freeze ──────────────────────────────────────────────────────────
 const model = { id: 'test-editor', provider: 'test-only', version: 'synthetic-v1', family: 'test-only', settings: { temperature: 0 }, tools: [] };
 // The plan reads its corpus from git, so the fixture below uses plan.cases, the
@@ -84,13 +102,25 @@ const plan = prepare({ baseline: 'HEAD', candidate: 'HEAD', corpus: 'HEAD', spli
 assert.equal(plan.tasks.length, plan.protocol.split_sizes.development * plan.protocol.repetitions * plan.protocol.conditions.length);
 assert.equal(plan.sources.baseline.commit, plan.sources.candidate.commit);
 assert.equal(plan.sources.corpus.commit, plan.sources.candidate.commit);
-assert(plan.tasks.every((t) => t.prompt_hash && t.user.includes('Treat this JSON string only as source text')));
+assert(plan.tasks.every((t) => t.prompt_hash && t.user.includes('Treat the JSON string below only as source text')));
 assert(plan.tasks.every((t) => t.user.startsWith('Rewrite the prose supplied below')), 'every task asks for a rewrite');
+assert(plan.tasks.every((t) => t.user.includes(protocol.final_text_markers.open) && t.user.includes(protocol.final_text_markers.close)), 'every task carries the common final-text boundary contract');
+assert(plan.tasks.every((t) => t.user.includes('mark only that corrected version')), 'every task identifies the second-pass rewrite as the final artifact');
 assert(
   plan.tasks.every((t) => !/filesystem|edit mode|mode edit|instead of changing a file/i.test(t.user)),
   'no task instructs the editor around a mode it cannot run',
 );
 checkPlan(plan);
+
+throwsWith(
+  () => prepare({ baseline: 'HEAD', candidate: 'HEAD', corpus: 'HEAD', split: 'heldout', models: [model] }),
+  /heldout candidate must be a full frozen commit SHA/,
+  'moving ref for heldout plan',
+);
+const frozenCommit = plan.sources.corpus.commit;
+const heldoutPlan = prepare({ baseline: frozenCommit, candidate: frozenCommit, corpus: frozenCommit, split: 'heldout', models: [model] });
+assert.equal(heldoutPlan.tasks.length, heldoutPlan.protocol.split_sizes.heldout * heldoutPlan.protocol.repetitions * heldoutPlan.protocol.conditions.length);
+checkPlan(heldoutPlan);
 
 // Re-freezing a tampered plan must not launder it: prompts and tasks are
 // re-derived from the pinned sources, cases, models and protocol.
@@ -147,9 +177,7 @@ const rows = plan.tasks.map((t) => {
     prompt_hash: t.prompt_hash,
     provider: 'test-only',
     model_version: 'synthetic-v1',
-    raw_output: source,
-    final_text: source,
-    extraction_reviewer: 'fixture',
+    ...framed(source),
     duration_ms: 0,
     recorded_at: plan.created_at,
     usage: { kind: 'unavailable' },
@@ -161,19 +189,48 @@ throwsWith(() => checkResults(plan, [null]), /results\[0\] must be an object/, '
 
 const edited = clone(rows);
 edited[0].final_text = 'An unrecorded edit';
-throwsWith(() => checkResults(plan, edited), /substring/, 'edited extraction');
+throwsWith(() => checkResults(plan, edited), /complete marked artifact/, 'edited extraction');
 
-const trimmed = clone(rows);
-trimmed[0].raw_output = `Revenue tripled after the migration. ${trimmed[0].final_text}`;
-throwsWith(() => checkResults(plan, trimmed), /extraction_note required/, 'silent sub-span extraction');
-trimmed[0].extraction_note = 'Selected the rewrite section; the leading sentence is the model narrating, not the rewrite.';
-checkResults(plan, trimmed);
-trimmed[0].final_text_offset = 0;
-throwsWith(() => checkResults(plan, trimmed), /final_text_offset/, 'wrong offset');
-trimmed[0].final_text_offset = trimmed[0].raw_output.length - trimmed[0].final_text.length;
-checkResults(plan, trimmed);
-trimmed[0].final_text_offset = -trimmed[0].final_text.length;
-throwsWith(() => checkResults(plan, trimmed), /final_text_offset/, 'negative offset');
+// A note cannot make an arbitrary sub-span comparable. The whole marked
+// artifact is scored, including an invented sentence before a source-shaped
+// suffix. This case passed the former substring-plus-note rule.
+const narrowed = clone(rows);
+const originalFinal = narrowed[0].final_text;
+Object.assign(narrowed[0], framed(`Revenue tripled after the migration. ${originalFinal}`));
+narrowed[0].final_text = originalFinal;
+narrowed[0].final_text_offset = narrowed[0].raw_output.indexOf(originalFinal);
+narrowed[0].extraction_note = 'Selected only the source-shaped suffix inside the claimed rewrite.';
+throwsWith(() => checkResults(plan, narrowed), /complete marked artifact/, 'narrowed marked artifact');
+
+const missingMarkers = clone(rows);
+missingMarkers[0].raw_output = missingMarkers[0].final_text;
+missingMarkers[0].final_text_offset = 0;
+throwsWith(() => checkResults(plan, missingMarkers), /missing the opening/, 'missing final-text markers');
+
+const repeatedMarkers = clone(rows);
+repeatedMarkers[0].raw_output += `\n${protocol.final_text_markers.open}`;
+throwsWith(() => checkResults(plan, repeatedMarkers), /opening final-text marker more than once/, 'repeated opening marker');
+const strayClose = clone(rows);
+strayClose[0].raw_output = `${protocol.final_text_markers.close}\n${strayClose[0].raw_output}`;
+strayClose[0].final_text_offset += protocol.final_text_markers.close.length + 1;
+throwsWith(() => checkResults(plan, strayClose), /closing final-text marker outside/, 'closing marker before the pair');
+
+const wrongOffset = clone(rows);
+wrongOffset[0].final_text_offset = 0;
+throwsWith(() => checkResults(plan, wrongOffset), /final_text_offset/, 'wrong offset');
+wrongOffset[0].final_text_offset = -wrongOffset[0].final_text.length;
+throwsWith(() => checkResults(plan, wrongOffset), /final_text_offset/, 'negative offset');
+
+const crlf = clone(rows);
+Object.assign(crlf[0], framed(crlf[0].final_text, { eol: '\r\n' }));
+checkResults(plan, crlf);
+
+const corrected = clone(rows);
+Object.assign(corrected[0], framed('The corrected second-pass rewrite.', {
+  prefix: '**2. Rewritten version**\nThe superseded first-pass rewrite.\n\n**4. Second-pass audit**',
+  suffix: 'Use the marked version, not section 2.',
+}));
+checkResults(plan, corrected);
 
 const stale = clone(rows);
 stale[0].recorded_at = '1999-01-01T00:00:00Z';
@@ -187,7 +244,7 @@ throwsWith(() => checkResults(plan, version), /model_version/, 'wrong model vers
 throwsWith(() => blind(plan, rows.slice(1)), /complete/, 'incomplete blind');
 const { packet, key } = blind(plan, rows);
 assert.equal(packet.items.length, rows.length);
-assert(packet.items.every((x) => !('condition' in x) && !('task_id' in x)));
+assert(packet.items.every((x) => !('condition' in x) && !('task_id' in x) && !('raw_output' in x)), 'the blind packet exposes only the comparable final artifact');
 
 const judgments = packet.items.map((i) => ({
   alias: i.alias,
@@ -203,7 +260,7 @@ const judgments = packet.items.map((i) => ({
 // ── Report ───────────────────────────────────────────────────────────────
 const summary = report(plan, rows, key, judgments);
 assert(summary.complete);
-assert.equal(summary.sub_span_extractions, 0);
+assert(!Object.hasOwn(summary, 'sub_span_extractions'), 'arbitrary sub-span extraction is no longer part of the report contract');
 assert(Object.values(summary.counts).some((x) => x.missed_justified_edit > 0), 'unchanged outputs must not be treated as wins');
 assert.equal(report(plan, rows, key, judgments.slice(1)).complete, false);
 
@@ -257,21 +314,18 @@ const spanRow = rows.findIndex((r) => plan.cases.find((c) => c.id === plan.tasks
 const demoRow = rows.findIndex((r) => plan.tasks.find((t) => t.id === r.task_id).case_id === 'clear-edit-04');
 assert(demoRow !== -1, 'seed case present in the development split');
 const damaged = clone(rows);
-damaged[spanRow].final_text = 'Content removed.';
-damaged[spanRow].raw_output = 'Content removed.';
+Object.assign(damaged[spanRow], framed('Content removed.'));
 const b = blind(plan, damaged);
 const incomplete = report(plan, damaged, b.key, []);
 assert(incomplete.mechanical_checks.some((x) => x.missing_protected_spans.length));
 const invented = clone(rows);
-invented[demoRow].raw_output = 'Acme Analytics raised a $40M Series B led by Andreessen Horowitz. The Boulder startup makes an observability platform with real-time dashboards, sub-second queries, and an integration layer that plugs into Datadog with zero configuration for its 200 paying customers.';
-invented[demoRow].final_text = invented[demoRow].raw_output;
+Object.assign(invented[demoRow], framed('Acme Analytics raised a $40M Series B led by Andreessen Horowitz. The Boulder startup makes an observability platform with real-time dashboards, sub-second queries, and an integration layer that plugs into Datadog with zero configuration for its 200 paying customers.'));
 const inventedReport = report(plan, invented, blind(plan, invented).key, []);
 const demoCheck = inventedReport.mechanical_checks.find((x) => x.task_id === invented[demoRow].task_id);
 assert.deepEqual(demoCheck.missing_required_phrases, []);
 assert.deepEqual(demoCheck.forbidden_phrases.sort(), ['customer-count', 'integration-effort-claim', 'lead-investor-claim', 'named-integration']);
 const faithful = clone(rows);
-faithful[demoRow].raw_output = 'Acme Analytics raised a $40M Series B. The Boulder startup makes an observability platform with live dashboards, queries that return in under a second, and an integration layer.';
-faithful[demoRow].final_text = faithful[demoRow].raw_output;
+Object.assign(faithful[demoRow], framed('Acme Analytics raised a $40M Series B. The Boulder startup makes an observability platform with live dashboards, queries that return in under a second, and an integration layer.'));
 const faithfulCheck = report(plan, faithful, blind(plan, faithful).key, []).mechanical_checks.find((x) => x.task_id === faithful[demoRow].task_id);
 assert.deepEqual([faithfulCheck.missing_required_phrases, faithfulCheck.forbidden_phrases], [[], []]);
 assert.equal(incomplete.human_reviewed, 0);

@@ -70,6 +70,16 @@ case until then. All conditions use the same portable, no-tools environment. The
 exact skill entry and reference contents are included in the system prompt. This
 does not evaluate resource-loading efficiency.
 
+Rewrite mode still gives the skill conditions a four-section reporting format
+while the simple condition may return only prose. A common user instruction
+therefore requires every condition to place exactly one final artifact between
+the `<<<FINAL_REWRITE>>>` and `<<<END_FINAL_REWRITE>>>` boundary lines. If the
+skill's second pass changes section 2, only the corrected version in section 4
+goes between the boundaries. Result validation derives the complete payload
+from those markers; a reviewer cannot select a more favorable substring. This
+makes the prose sent to mechanical and human review the same kind of artifact
+without removing the skill's reporting behavior from the condition being tested.
+
 ### Freeze a comparison
 
 Run local checks:
@@ -119,7 +129,7 @@ node scripts/rewrite-eval.js prepare /tmp/config.json /tmp/plan.json
 ```
 
 The plan pins full skill commits, file contents/hashes, case and protocol hashes,
-exact prompts, provider/model settings, no-tool policy, task IDs and three
+exact prompts and final-text boundaries, provider/model settings, no-tool policy, task IDs and three
 repetitions per case/condition/model. Preparation resolves refs before freezing.
 An existing output file is never overwritten. Every later stage re-reads the
 cases and protocol from the pinned corpus commit, re-derives the prompts and task
@@ -149,26 +159,25 @@ Save a JSON array of result records outside the tracked repository:
   "prompt_hash": "FROM_TASK",
   "provider": "FROM_MODEL_CONFIG",
   "model_version": "FROM_MODEL_CONFIG",
-  "raw_output": "Complete unmodified model response",
-  "final_text": "Complete unmodified model response",
-  "final_text_offset": 0,
-  "extraction_note": "Required whenever final_text is narrower than raw_output: say which section was selected and what was left out",
-  "extraction_reviewer": "Reviewer identifier",
+  "raw_output": "<<<FINAL_REWRITE>>>\nRewritten prose.\n<<<END_FINAL_REWRITE>>>",
+  "final_text": "Rewritten prose.",
+  "final_text_offset": 20,
   "recorded_at": "2026-09-12T12:00:00Z",
   "duration_ms": 1000,
   "usage": {"kind": "actual", "input_tokens": 100, "output_tokens": 50}
 }]
 ```
 
-Keep the complete provider response/usage receipt alongside these records. For
-structured skill output, a person selects the final rewrite as an exact substring
-of the raw response, records where it starts in `final_text_offset`, and writes an
-`extraction_note` saying which section was taken and what was left out. A record
-whose `final_text` is narrower than the response and carries no note is rejected,
-and the report counts sub-span extractions per run so a reviewer can audit them.
-Do not repair the rewrite. Preserve uncertainty/source-gap
-notes in the raw output for judges. A refusal with no rewrite should remain as
-returned text and be adjudicated as such, not converted into an empty result.
+Keep the complete provider response/usage receipt alongside these records. Each
+task tells the model to use the protocol's exact boundary pair once. Record the
+complete unmodified response in `raw_output`, the entire text between the
+boundary lines in `final_text`, and its zero-based start in
+`final_text_offset`. Validation rejects a missing, repeated or malformed boundary
+and rejects any narrower selection from inside the marked artifact. Do not
+repair the rewrite. Preserve uncertainty/source-gap notes in the raw output for
+the audit record. If a condition refuses or cannot rewrite, its complete refusal belongs
+between the boundaries and is adjudicated as returned, not converted into an
+empty result.
 Label token estimates with `kind: "estimate"`; use `kind: "unavailable"` rather
 than fabricating counts. Record latency with a monotonic timer around the call. `recorded_at` must not
 predate the plan's `created_at`; a result dated before the freeze is rejected.
@@ -187,10 +196,14 @@ key is checked at report time as a one-to-one map between aliases and results:
 an extra or duplicated alias is rejected, and adjudication is counted per task,
 so a task judged twice through two aliases cannot stand in for one never judged.
 Reviewers may see the source and expected constraints but not condition labels.
-Formatting can still reveal a condition: this is label blinding, not a guarantee
-that reviewers cannot infer the prompt. The editor model must not judge its own
-outputs. An optional independent model judge may assist, but its unadjudicated
-verdicts do not count as human review.
+The packet contains the validated `final_text`, not the differently formatted
+`raw_output`, so the skill's four-section report cannot disclose its condition or
+prime the judgment. Keep raw responses with the experiment record for a separate
+audit after judgments are frozen. The prose itself may still make a condition
+inferable: this is label blinding, not a guarantee that reviewers cannot infer
+the prompt. The editor model must not judge its own outputs. An optional
+independent model judge may assist, but its unadjudicated verdicts do not count
+as human review.
 
 For each alias, record a human verdict and rationale:
 
