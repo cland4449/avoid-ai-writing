@@ -16,6 +16,7 @@ const ROOT = path.resolve(__dirname, '..');
 const CASES_PATH = path.join(ROOT, 'evals/rewrite/cases.json');
 const PROTOCOL_PATH = path.join(ROOT, 'evals/rewrite/protocol.json');
 const PINNED_FILES = ['SKILL.md', 'references/patterns.md'];
+const CORPUS_FILES = ['evals/rewrite/cases.json', 'evals/rewrite/protocol.json'];
 const CONDITIONS = ['baseline', 'candidate', 'simple'];
 const METRICS = ['preservation_failure', 'unnecessary_edit', 'missed_justified_edit'];
 const PREFERENCES = ['preferred', 'tie', 'not_preferred', 'not_rated'];
@@ -25,10 +26,13 @@ const MODES = ['rewrite', 'edit'];
 const DECISIONS = ['preserve', 'change'];
 const PROFILES = ['linkedin', 'blog', 'technical-blog', 'investor-email', 'docs', 'casual'];
 const MAX_PATTERN_LENGTH = 200;
-// A quantified group that itself contains a quantifier ((a+)+, (a*)*, (a{2,})+)
-// backtracks exponentially on a near-miss. Case patterns run against model
-// output in report(), so a bad pattern would hang the report rather than fail it.
-const NESTED_QUANTIFIER = /\((?:[^()]*[+*}?][^()]*)\)[+*{]/;
+// Case patterns run against model output in report(), so a pattern that
+// backtracks exponentially on a near-miss would hang the report rather than
+// fail it. Rather than try to recognise every dangerous shape ((a+)+, (a|aa)+,
+// (a*)*), the accepted subset forbids repeating a group at all: `+`, `*` and
+// `{n,m}` may follow a character, class or escape, and `?` may follow a group.
+// Unrepeated alternation and optional groups stay available.
+const REPEATED_GROUP = /\)[+*{]/;
 
 const hash = (x) => crypto.createHash('sha256').update(typeof x === 'string' ? x : JSON.stringify(x)).digest('hex');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -61,7 +65,7 @@ function checkProtocol(protocol) {
 function checkPattern(rule, where) {
   assert(isObject(rule) && nonempty(rule.id) && nonempty(rule.pattern), `${where}: pattern rules need id and pattern`);
   assert(rule.pattern.length <= MAX_PATTERN_LENGTH, `${where}/${rule.id}: pattern longer than ${MAX_PATTERN_LENGTH} characters`);
-  assert(!NESTED_QUANTIFIER.test(rule.pattern), `${where}/${rule.id}: nested quantifier can backtrack exponentially`);
+  assert(!REPEATED_GROUP.test(rule.pattern), `${where}/${rule.id}: a repeated group (+, * or {n,m} after a closing parenthesis) can backtrack exponentially; repeat single characters or classes instead`);
   new RegExp(rule.pattern, 'i');
 }
 
@@ -112,27 +116,27 @@ function git(args) {
   }
 }
 
-function pinnedFiles(commit) {
-  return Object.fromEntries(PINNED_FILES.map((p) => [p, git(['show', `${commit}:${p}`])]));
+function pinnedFiles(commit, paths) {
+  return Object.fromEntries(paths.map((p) => [p, git(['show', `${commit}:${p}`])]));
 }
 
-function snapshot(ref) {
-  assert(nonempty(ref), 'baseline and candidate refs are required');
+function snapshot(ref, paths, label) {
+  assert(nonempty(ref), `${label} ref is required`);
   const commit = git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
-  const files = pinnedFiles(commit);
+  const files = pinnedFiles(commit, paths);
   return { commit, files, sha256: hash(files) };
 }
 
-function checkSnapshot(source, label, { git: verifyGit = true } = {}) {
+function checkSnapshot(source, label, paths, { git: verifyGit = true } = {}) {
   assert(isObject(source) && /^[0-9a-f]{40}$/.test(source.commit), `${label}: pinned commit must be a full SHA`);
   assert(isObject(source.files), `${label}: pinned files missing`);
-  assert.deepEqual(Object.keys(source.files), PINNED_FILES, `${label}: pinned file list changed`);
-  assert(PINNED_FILES.every((p) => typeof source.files[p] === 'string'), `${label}: pinned file contents must be strings`);
+  assert.deepEqual(Object.keys(source.files), paths, `${label}: pinned file list changed`);
+  assert(paths.every((p) => typeof source.files[p] === 'string'), `${label}: pinned file contents must be strings`);
   assert.equal(source.sha256, hash(source.files), `${label}: pinned file hash does not match its contents`);
   if (verifyGit) {
     let actual;
     try {
-      actual = pinnedFiles(source.commit);
+      actual = pinnedFiles(source.commit, paths);
     } catch (err) {
       throw new Error(`${label}: cannot verify pinned commit ${source.commit} against git; fetch it into this checkout first (${err.message})`);
     }
@@ -182,13 +186,31 @@ function buildTasks(cases, models, protocol, split, prompts) {
   return tasks;
 }
 
-function prepare(config, cases, protocol) {
+// The case set and protocol are read from a git commit (config.corpus, default
+// HEAD), not from the working tree, so the plan carries a commit that any later
+// check can re-read. Commit case edits before preparing a plan.
+function corpusAt(ref) {
+  const source = snapshot(ref, CORPUS_FILES, 'corpus');
+  const [casesPath, protocolPath] = CORPUS_FILES;
+  return { source, cases: JSON.parse(source.files[casesPath]), protocol: JSON.parse(source.files[protocolPath]) };
+}
+
+function prepare(config) {
   assert(isObject(config), 'config must be an object');
-  validateCases(cases, protocol);
   assert(SPLITS.includes(config.split), `config.split must be one of ${SPLITS.join(', ')}`);
   checkModels(config.models);
-  const sources = { baseline: snapshot(config.baseline), candidate: snapshot(config.candidate) };
-  if (config.split === 'heldout') assert.equal(config.candidate, sources.candidate.commit, 'heldout candidate must be a full frozen commit SHA');
+  const corpus = corpusAt(config.corpus ?? 'HEAD');
+  const { cases, protocol } = corpus;
+  validateCases(cases, protocol);
+  const sources = {
+    baseline: snapshot(config.baseline, PINNED_FILES, 'baseline'),
+    candidate: snapshot(config.candidate, PINNED_FILES, 'candidate'),
+    corpus: corpus.source,
+  };
+  if (config.split === 'heldout') {
+    assert.equal(config.candidate, sources.candidate.commit, 'heldout candidate must be a full frozen commit SHA');
+    assert.equal(config.corpus, sources.corpus.commit, 'heldout corpus must be a full frozen commit SHA');
+  }
   if (sources.baseline.commit === sources.candidate.commit) {
     process.stderr.write(`warning: baseline and candidate both resolve to ${sources.candidate.commit}; this plan compares the skill against itself\n`);
   }
@@ -211,9 +233,9 @@ function prepare(config, cases, protocol) {
 }
 
 // Verifies a plan against what it claims to be derived from, not just against
-// its own stored hashes. Prompts, tasks and prompt hashes are rebuilt from the
-// frozen cases, protocol, models and pinned sources, and the pinned sources are
-// re-read from git.
+// its own stored hashes. The cases and protocol are re-read from the pinned
+// corpus commit, prompts, tasks and prompt hashes are rebuilt from them and the
+// pinned skill sources, and every pinned file is re-read from git.
 function checkPlan(plan, options = {}) {
   assert(isObject(plan), 'plan must be an object');
   assert.equal(plan.schema_version, 1, 'unsupported plan schema');
@@ -226,9 +248,12 @@ function checkPlan(plan, options = {}) {
   validateCases(plan.cases, plan.protocol);
   checkModels(plan.models);
   assert(isObject(plan.sources), 'plan.sources missing');
-  assert.deepEqual(Object.keys(plan.sources).sort(), ['baseline', 'candidate'], 'plan.sources must pin baseline and candidate');
-  for (const label of ['baseline', 'candidate']) checkSnapshot(plan.sources[label], label, options);
-  if (plan.split === 'heldout') assert(/^[0-9a-f]{40}$/.test(plan.sources.candidate.commit), 'heldout candidate must be a full frozen commit SHA');
+  assert.deepEqual(Object.keys(plan.sources).sort(), ['baseline', 'candidate', 'corpus'], 'plan.sources must pin baseline, candidate and corpus');
+  for (const label of ['baseline', 'candidate']) checkSnapshot(plan.sources[label], label, PINNED_FILES, options);
+  checkSnapshot(plan.sources.corpus, 'corpus', CORPUS_FILES, options);
+  const [casesPath, protocolPath] = CORPUS_FILES;
+  assert.deepEqual(plan.cases, JSON.parse(plan.sources.corpus.files[casesPath]), 'plan.cases differ from the pinned corpus commit');
+  assert.deepEqual(plan.protocol, JSON.parse(plan.sources.corpus.files[protocolPath]), 'plan.protocol differs from the pinned corpus commit');
   assert.deepEqual(plan.prompts, buildPrompts(plan.sources, plan.protocol), 'plan.prompts are not derived from the pinned sources and protocol');
   const expectedTasks = buildTasks(plan.cases, plan.models, plan.protocol, plan.split, plan.prompts);
   assert.equal(JSON.stringify(plan.tasks), JSON.stringify(expectedTasks), 'plan.tasks are not derived from the frozen cases, models and protocol');
@@ -259,7 +284,8 @@ function checkResults(plan, rows, options = {}) {
     // selection is narrower than the whole response.
     assert(r.raw_output.includes(r.final_text), `${r.task_id}: final_text must be an exact substring of raw_output`);
     if (r.final_text_offset !== undefined) {
-      assert(Number.isInteger(r.final_text_offset) && r.raw_output.slice(r.final_text_offset, r.final_text_offset + r.final_text.length) === r.final_text, `${r.task_id}: final_text_offset does not locate final_text in raw_output`);
+      const offset = r.final_text_offset;
+      assert(Number.isInteger(offset) && offset >= 0 && offset + r.final_text.length <= r.raw_output.length && r.raw_output.slice(offset, offset + r.final_text.length) === r.final_text, `${r.task_id}: final_text_offset does not locate final_text in raw_output`);
     }
     if (r.final_text.trim() !== r.raw_output.trim()) {
       assert(nonempty(r.extraction_note), `${r.task_id}: extraction_note required when final_text is a sub-span of raw_output (say which section was selected and what was left out)`);
@@ -356,8 +382,8 @@ function report(plan, rows, key, judgments, options = {}) {
   const preferences = {};
   const ballots = new Map();
   for (const j of judgments) {
+    assert(nonempty(j.alias) && Object.hasOwn(key.aliases, j.alias), `unknown alias ${j.alias}`);
     const taskId = key.aliases[j.alias];
-    assert(taskId, `unknown alias ${j.alias}`);
     assert(!judgedTasks.has(taskId), `duplicate adjudication for ${taskId} (alias ${j.alias})`);
     judgedTasks.add(taskId);
     assert(j.reviewer_role === 'human' && nonempty(j.reviewer) && nonempty(j.rationale), `${taskId}: human adjudication and rationale required`);
@@ -428,7 +454,7 @@ function main(args) {
     validateCases(read(CASES_PATH), protocol);
     console.log(`${protocol.case_count} cases valid; no model calls.`);
   } else if (cmd === 'prepare' && files.length === 2) {
-    write(files[1], prepare(read(files[0]), read(CASES_PATH), loadProtocol()));
+    write(files[1], prepare(read(files[0])));
   } else if (cmd === 'blind' && files.length === 4) {
     writeBlind(...files);
   } else if (cmd === 'report' && files.length === 5) {

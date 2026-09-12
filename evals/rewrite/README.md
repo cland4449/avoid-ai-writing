@@ -41,7 +41,11 @@ edits, contextual judgments, and preservation conflicts. The corrected demo
 seeds `clear-edit-04`.
 
 Cases record atomic claims, exact protected spans, allowed edits, expected
-preserve/change decisions, provenance and review guidance. Their wording is
+preserve/change decisions, provenance and review guidance. Required and forbidden
+patterns are case-insensitive regular expressions from a restricted subset: a
+`+`, `*` or `{n,m}` may repeat a character, class or escape but never a group,
+because case patterns run against model output at report time and a repeated
+group can backtrack exponentially. Unrepeated alternation and `(...)?` are fine. Their wording is
 original and MIT-licensed; there are no private drafts. Both splits cover all
 six skill profiles. There are 36 development cases and 12 held-out cases. Cases
 are grouped under twelve fictional authors and twenty-four fictional documents,
@@ -76,6 +80,7 @@ Create a configuration outside the tracked repository. For example:
 {
   "baseline": "d57265d81b7a8d56827bf23f5deef557fc988462",
   "candidate": "FULL_CANDIDATE_COMMIT_SHA",
+  "corpus": "FULL_CORPUS_COMMIT_SHA",
   "split": "development",
   "models": [{
     "id": "editor-a",
@@ -90,7 +95,10 @@ Create a configuration outside the tracked repository. For example:
 
 Replace the example commit and model placeholders with real identifiers. Resolve
 the desired baseline with `git rev-parse <ref>`; fetch it if absent from a shallow
-checkout. Include every effective setting, including any reasoning budget and
+checkout. `corpus` names the commit whose `evals/rewrite/cases.json` and
+`protocol.json` the plan uses; it defaults to `HEAD` for development runs and must
+be a full SHA for a held-out run. The case set is read from that commit, not from
+the working tree, so commit case edits before preparing. Include every effective setting, including any reasoning budget and
 seed supported by the provider. If a provider only exposes a moving alias,
 record that limitation and do not present the run as version-reproducible.
 Use the same model and settings across baseline, candidate and simple conditions.
@@ -102,10 +110,11 @@ node scripts/rewrite-eval.js prepare /tmp/config.json /tmp/plan.json
 The plan pins full skill commits, file contents/hashes, case and protocol hashes,
 exact prompts, provider/model settings, no-tool policy, task IDs and three
 repetitions per case/condition/model. Preparation resolves refs before freezing.
-An existing output file is never overwritten. Every later stage re-derives the
-prompts and task list from the frozen cases, protocol, models and pinned sources,
-and re-reads the pinned files from git, so a plan edited and re-hashed by hand is
-rejected rather than trusted. If baseline and candidate resolve to the same
+An existing output file is never overwritten. Every later stage re-reads the
+cases and protocol from the pinned corpus commit, re-derives the prompts and task
+list from them, the models and the pinned skill sources, and re-reads every pinned
+file from git, so a plan edited and re-hashed by hand is rejected rather than
+trusted. If baseline and candidate resolve to the same
 commit, `prepare` warns that the plan compares the skill against itself. Commit the case set, protocol and
 candidate before comparisons; archive the plan hash with the experiment record.
 Changing any metric or prompt requires a new preregistration, not rewriting the
