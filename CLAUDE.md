@@ -27,7 +27,7 @@ Edit `SKILL.md` and `references/patterns.md` directly. When making changes:
 - Run `npm test` to exercise the detector, category contract, validator, corpus helpers, and style checks.
 - Add a dated entry to CHANGELOG.md
 - Update README.md if the change affects installation, usage, feature list, or pattern count
-- The pattern count lives in **one** place — the README "74 pattern categories" bullet — and is derived from references/patterns.md's detection `###` entries. Don't restate it elsewhere; CI (`scripts/check-pattern-count.sh`) fails the build if the README number drifts from references/patterns.md, so just add the new `###` entry and bump the README bullet.
+- The pattern count is canonical in the README "74 pattern categories" bullet (derived from references/patterns.md's detection `###` entries). This bullet quotes that number here as a **checked copy** for agent context — update README and this sentence when you add or remove a detection category. Don't restate the count elsewhere; CI (`scripts/check-pattern-count.sh`) fails if either literal drifts from `references/patterns.md`.
 
 ## Architecture of the skill
 
