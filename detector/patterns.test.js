@@ -361,6 +361,20 @@ test('#123: unknown source modes fall back visibly to plain', () => {
   assert.equal(omitted.stats.sourceModeFallback, undefined);
 });
 
+test('#190: many HTML comments avoid quadratic rescanning', () => {
+  const count = 2000;
+  const text = `${'<!-- x -->\n'.repeat(count)}one two three four five six seven eight nine ten`;
+  const started = performance.now();
+  const result = AIDetector.analyzeText(text, { sourceMode: 'rendered-markdown' });
+  const elapsedMs = performance.now() - started;
+
+  assert.equal(result.stats.maskedHtmlComments, count);
+  assert.ok(
+    elapsedMs < 900,
+    `masking must not rescan the full document per comment (${elapsedMs.toFixed(1)}ms for ${count} comments)`,
+  );
+});
+
 test('repeated Tier 1 phrase does not inflate score linearly', () => {
   const single = AIDetector.analyzeText('We delve into the landscape of many things today.');
   const fivefold = AIDetector.analyzeText(

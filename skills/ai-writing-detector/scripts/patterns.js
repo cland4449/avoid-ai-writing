@@ -938,21 +938,56 @@ const AIDetector = (() => {
       maskedFrontmatter = 1;
     }
 
-    const maskCommentCode = () => {
-      const codeChars = maskCode(chars.join('')).split('');
-      maskTopLevelIndentedCode(codeChars, { listAware: true });
-      return codeChars.join('');
+    // maskCode is index-preserving; blank comment spans in the same layer so
+    // fenced/inline delimiters inside removed comments cannot affect later scans.
+    const codeBaseChars = maskCode(chars.join('')).split('');
+    const commentScanChars = codeBaseChars.slice();
+    maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
+    const refreshCodeBaseFromChars = () => {
+      const refreshed = maskCode(chars.join('')).split('');
+      for (let i = 0; i < refreshed.length; i += 1) codeBaseChars[i] = refreshed[i];
+    };
+    const refreshCommentScan = () => {
+      refreshCodeBaseFromChars();
+      for (let i = 0; i < codeBaseChars.length; i += 1) commentScanChars[i] = codeBaseChars[i];
+      maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
+    };
+    const refreshIndentedListScan = () => {
+      for (let i = 0; i < codeBaseChars.length; i += 1) commentScanChars[i] = codeBaseChars[i];
+      maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
+    };
+    const commentAffectsListContext = (start, end) => {
+      for (const line of text.slice(start, end).split('\n')) {
+        if (/^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:\s|$)/.test(line)) return true;
+      }
+      return false;
+    };
+    const commentAffectsCodeMask = (start, end) => /[`]/.test(text.slice(start, end));
+    const findCommentOpen = (fromIndex) => {
+      for (let i = fromIndex; i <= commentScanChars.length - 4; i += 1) {
+        if (
+          commentScanChars[i] === '<'
+          && commentScanChars[i + 1] === '!'
+          && commentScanChars[i + 2] === '-'
+          && commentScanChars[i + 3] === '-'
+        ) return i;
+      }
+      return -1;
     };
     let maskedHtmlComments = 0;
     let searchIndex = 0;
     while (searchIndex < text.length) {
-      const openingIndex = maskCommentCode().indexOf('<!--', searchIndex);
+      const openingIndex = findCommentOpen(searchIndex);
       if (openingIndex === -1) break;
       const closingIndex = text.indexOf('-->', openingIndex + 2);
       const end = closingIndex === -1 ? text.length : closingIndex + 3;
       blankRange(chars, openingIndex, end);
+      blankRange(codeBaseChars, openingIndex, end);
+      blankRange(commentScanChars, openingIndex, end);
       maskedHtmlComments += 1;
       searchIndex = end;
+      if (commentAffectsCodeMask(openingIndex, end)) refreshCommentScan();
+      else if (commentAffectsListContext(openingIndex, end)) refreshIndentedListScan();
     }
 
     return { text: chars.join(''), maskedFrontmatter, maskedHtmlComments };
@@ -996,8 +1031,8 @@ const AIDetector = (() => {
     };
   }
 
-  function maskTopLevelIndentedCode(chars, { listAware = false } = {}) {
-    const lines = chars.join('').split('\n');
+  function maskTopLevelIndentedCode(chars, { listAware = false, lineSource = null } = {}) {
+    const lines = (lineSource || chars).join('').split('\n');
     let offset = 0;
     let inBlock = false;
     let previousBlank = true;
