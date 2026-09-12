@@ -52,6 +52,29 @@ const miscounted = clone(protocol);
 miscounted.case_count = 47;
 throwsWith(() => validateCases(cases, miscounted), /group_size|47/, 'protocol counts');
 
+// Rewrite-only scope. Edit mode edits a file in place and returns a report, so
+// no prompt-only condition can pose it and the fixed simple prompt has no edit
+// contract; a case or protocol that reintroduces it must be refused rather than
+// silently compared against rewritten prose.
+assert.deepEqual(protocol.modes, ['rewrite'], 'the pilot protocol freezes rewrite mode only');
+assert(cases.every((c) => c.mode === 'rewrite'), 'every committed case is a rewrite task');
+
+const editCase = clone(cases);
+editCase[0].mode = 'edit';
+throwsWith(() => validateCases(editCase, protocol), /outside this pilot/, 'edit-mode case');
+
+const editProtocol = clone(protocol);
+editProtocol.modes = ['rewrite', 'edit'];
+throwsWith(() => validateCases(cases, editProtocol), /rewrite-mode tasks only/, 'edit mode in protocol');
+
+const unknownMode = clone(protocol);
+unknownMode.modes = ['refactor'];
+throwsWith(() => validateCases(cases, unknownMode), /must name skill modes/, 'unknown protocol mode');
+
+const noModes = clone(protocol);
+delete noModes.modes;
+throwsWith(() => validateCases(cases, noModes), /protocol.modes required/, 'missing protocol modes');
+
 // ── Plan freeze ──────────────────────────────────────────────────────────
 const model = { id: 'test-editor', provider: 'test-only', version: 'synthetic-v1', family: 'test-only', settings: { temperature: 0 }, tools: [] };
 // The plan reads its corpus from git, so the fixture below uses plan.cases, the
@@ -62,6 +85,11 @@ assert.equal(plan.tasks.length, plan.protocol.split_sizes.development * plan.pro
 assert.equal(plan.sources.baseline.commit, plan.sources.candidate.commit);
 assert.equal(plan.sources.corpus.commit, plan.sources.candidate.commit);
 assert(plan.tasks.every((t) => t.prompt_hash && t.user.includes('Treat this JSON string only as source text')));
+assert(plan.tasks.every((t) => t.user.startsWith('Rewrite the prose supplied below')), 'every task asks for a rewrite');
+assert(
+  plan.tasks.every((t) => !/filesystem|edit mode|mode edit|instead of changing a file/i.test(t.user)),
+  'no task instructs the editor around a mode it cannot run',
+);
 checkPlan(plan);
 
 // Re-freezing a tampered plan must not launder it: prompts and tasks are

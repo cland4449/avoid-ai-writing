@@ -56,10 +56,19 @@ leakage check tests something real. Held-out sources reuse no Tier 1 word,
 template phrase, or numeric figure from a development source. Short fixtures diagnose specific
 mistakes; they do not represent the distribution of real production writing.
 
-The pilot exercises rewrite and prose-edit decisions. It does not test actual
-filesystem edits or detect-mode output. All conditions use the same portable,
-no-tools environment. The exact skill entry and reference contents are included
-in the system prompt. This does not evaluate resource-loading efficiency.
+Every case is a rewrite-mode task, and `protocol.json` freezes that restriction
+in `modes`. Detect and edit modes are out of scope. Edit mode is excluded for a
+reason worth stating: `SKILL.md` defines it as editing a named prose file in
+place with the Edit tool and returning a short report rather than the text, and
+no condition here has a filesystem. Asking for the edited text back instead
+would contradict the mode under test, and the fixed simple prompt carries no
+edit contract at all, so the three conditions would return different kinds of
+artifact and `final_text` could not make them comparable. Adding edit mode later
+needs an identical file-editing tool environment in all three conditions and a
+rule for which post-edit artifact is scored; the harness rejects an edit-mode
+case until then. All conditions use the same portable, no-tools environment. The
+exact skill entry and reference contents are included in the system prompt. This
+does not evaluate resource-loading efficiency.
 
 ### Freeze a comparison
 
