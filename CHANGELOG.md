@@ -14,6 +14,7 @@ All notable changes to this project are documented here.
 
 - Preserve detector issue indexes and sentence-highlight ranges against the original source after blockquote and normalization preprocessing (#189).
 - Include every observed corpus register in `corpus.js list`; preserve the preferred accepted-register order and sort additional registers deterministically.
+- Make rendered-Markdown HTML comment masking linear with a source-order scanner that preserves fenced, inline, and indented-code precedence without rescanning the document per comment (#190).
 - Fix three README link targets: the dead Cowork URL, the pattern-catalog pointer, and the
   voice-profile link that led to the triggering section.
 - Correct the `analyzeText()` result table in `detector/README.md`: the six score labels the

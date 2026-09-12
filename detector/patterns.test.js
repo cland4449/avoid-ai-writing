@@ -252,6 +252,26 @@ test('#123: code delimiters in one comment cannot hide a later comment', () => {
   assert.ok(result.issues.some((issue) => issue.type === 'transition'), 'visible prose must still fire');
 });
 
+test('#190: tilde fences and adjacent list markers in comments preserve later context', () => {
+  const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
+  const hidden = 'Furthermore, this seamless robust paradigm is a testament to progress.';
+  const cases = [
+    ['tilde fence', ['<!--', '~~~', '-->', prose, `<!-- ${hidden} -->`].join('\n'), 2],
+    ['adjacent list marker', ['-<!-- hidden -->', '', `    <!-- ${hidden} -->`, '', prose].join('\n'), 2],
+  ];
+
+  for (const [name, text, commentCount] of cases) {
+    const result = AIDetector.analyzeText(text, { sourceMode: 'rendered-markdown' });
+    assert.equal(result.stats.maskedHtmlComments, commentCount, `${name}: comment count`);
+    assert.equal(
+      result.issues.some((issue) => /seamless|robust|paradigm|testament/i.test(issue.text || '')),
+      false,
+      `${name}: hidden prose must stay hidden`,
+    );
+    assert.ok(result.issues.some((issue) => issue.type === 'transition' && issue.text === 'Moreover'));
+  }
+});
+
 test('#123: short HTML comments close at an overlapping delimiter', () => {
   const prose = 'Moreover, the editor checked the original document before changing the published account for the morning edition.';
 
@@ -359,6 +379,22 @@ test('#123: unknown source modes fall back visibly to plain', () => {
 
   const omitted = AIDetector.analyzeText(text);
   assert.equal(omitted.stats.sourceModeFallback, undefined);
+});
+
+test('#190: many HTML comments avoid quadratic rescanning', () => {
+  const count = 2000;
+  // Every comment contains the unmatched backtick that forced the old
+  // implementation to rebuild whole-document code masks per comment.
+  const text = `${'<!-- ` -->\n'.repeat(count)}one two three four five six seven eight nine ten`;
+  const started = performance.now();
+  const result = AIDetector.analyzeText(text, { sourceMode: 'rendered-markdown' });
+  const elapsedMs = performance.now() - started;
+
+  assert.equal(result.stats.maskedHtmlComments, count);
+  assert.ok(
+    elapsedMs < 900,
+    `masking must not rescan the full document per comment (${elapsedMs.toFixed(1)}ms for ${count} comments)`,
+  );
 });
 
 test('repeated Tier 1 phrase does not inflate score linearly', () => {
