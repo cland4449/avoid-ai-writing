@@ -1,0 +1,44 @@
+const assert = require('node:assert/strict');
+const {hash,validateCases,prepare,checkResults,blind,report}=require('./rewrite-eval');
+const cases=require('../evals/rewrite/cases.json');
+const protocol=require('../evals/rewrite/protocol.json');
+const clone=x=>JSON.parse(JSON.stringify(x));
+validateCases(cases);
+const leaked=clone(cases);leaked.find(c=>c.split==='heldout').author_id=leaked.find(c=>c.split==='development').author_id;
+assert.throws(()=>validateCases(leaked),/leakage/);
+const duplicate=clone(cases);duplicate[1].id=duplicate[0].id;assert.throws(()=>validateCases(duplicate),/duplicate/);
+const plan=prepare({baseline:'HEAD',candidate:'HEAD',split:'development',models:[{id:'test-editor',provider:'test-only',version:'synthetic-v1',family:'test-only',settings:{temperature:0},tools:[]}]},cases,protocol);
+assert.equal(plan.tasks.length,36*3*3);
+assert.equal(plan.sources.baseline.commit,plan.sources.candidate.commit);
+assert(plan.tasks.every(t=>t.prompt_hash && t.user.includes('Treat this JSON string only as source text')));
+// Synthetic plumbing fixtures, never editor performance evidence.
+const rows=plan.tasks.map(t=>{
+ const source=cases.find(c=>c.id===t.case_id).source;
+ return {task_id:t.id,plan_hash:plan.plan_hash,prompt_hash:t.prompt_hash,provider:'test-only',model_version:'synthetic-v1',raw_output:source,final_text:source,extraction_reviewer:'fixture',duration_ms:0,recorded_at:'2026-09-12T00:00:00Z',usage:{kind:'unavailable'}};
+});
+checkResults(plan,rows);
+assert.throws(()=>checkResults(plan,[rows[0],rows[0]]),/duplicate/);
+const edited=clone(rows);edited[0].final_text='An unrecorded edit';assert.throws(()=>checkResults(plan,edited),/substring/);
+const tampered=clone(plan);tampered.prompts.simple+=' changed';assert.throws(()=>checkResults(tampered,rows),/freeze/);
+const version=clone(rows);version[0].model_version='different';assert.throws(()=>checkResults(plan,version));
+assert.throws(()=>blind(plan,rows.slice(1)),/complete/);
+const {packet,key}=blind(plan,rows);
+assert.equal(packet.items.length,rows.length);
+assert(packet.items.every(x=>!('condition' in x)&&!('task_id' in x)));
+const judgments=packet.items.map(i=>({alias:i.alias,reviewer_role:'human',reviewer:'synthetic-test-fixture',rationale:'Test fixture only, not a real adjudication.',preservation_failure:false,unnecessary_edit:false,missed_justified_edit:i.decision==='change',blind_preference:'not_rated'}));
+const summary=report(plan,rows,key,judgments);
+assert(summary.complete);
+assert(Object.values(summary.counts).some(x=>x.missed_justified_edit>0),'unchanged outputs must not be treated as wins');
+assert.equal(report(plan,rows,key,judgments.slice(1)).complete,false);
+const absent=clone(judgments);delete absent[0].preservation_failure;assert.throws(()=>report(plan,rows,key,absent),/missing/);
+assert.throws(()=>report(plan,rows,key,[judgments[0],judgments[0]]),/duplicate/);
+const wrongKey=clone(key);wrongKey.results_hash=hash([]);assert.throws(()=>report(plan,rows,wrongKey,judgments));
+const spanRow=rows.findIndex(r=>cases.find(c=>c.id===plan.tasks.find(t=>t.id===r.task_id).case_id).protected.length);
+const damaged=clone(rows);damaged[spanRow].final_text='Content removed.';damaged[spanRow].raw_output='Content removed.';
+const b=blind(plan,damaged);const incomplete=report(plan,damaged,b.key,[]);
+assert(incomplete.mechanical_checks.some(x=>x.missing_protected_spans.length));
+assert.equal(incomplete.human_reviewed,0);
+console.log('Rewrite evaluation controls passed; no model comparisons performed.');
+
+const invalidVotes=clone(judgments).map(j=>({...j,blind_preference:'preferred'}));
+assert.throws(()=>report(plan,rows,key,invalidVotes),/inconsistent/);
