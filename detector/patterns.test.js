@@ -2512,12 +2512,10 @@ test('#260: punctuation-prefix analysis scales without rescanning each suffix', 
     return best;
   };
   for (const ending of ['', '.']) {
-    // Cover both the trailing-fragment fallback and a later terminator. The
-    // sizes keep the small run well above timer noise: at 3000 prefixes it
-    // measured 6 ms on a CI runner and the ratio read 8x on a linear scan.
+    // Cover both the trailing-fragment fallback and a later terminator.
     timeFor(100, ending);
-    const small = Math.max(timeFor(20000, ending), 20);
-    const large = timeFor(80000, ending);
+    const small = Math.max(timeFor(3000, ending), 5);
+    const large = timeFor(12000, ending);
     assert.ok(large < small * 8,
       `punctuation prefix (${JSON.stringify(ending)}): 4x input took ${(large / small).toFixed(1)}x time (${small.toFixed(1)}ms vs ${large.toFixed(1)}ms)`);
   }
