@@ -28,6 +28,7 @@ on:
       - "LICENSE"
       - "cursor-rules/**"
       - "scripts/**"
+      - ".github/workflows/plugin-skill-sync.yml"
   push:
     branches: [main]
     paths:
@@ -56,6 +57,7 @@ on:
       - "LICENSE"
       - "cursor-rules/**"
       - "scripts/**"
+      - ".github/workflows/plugin-skill-sync.yml"
 
 permissions:
   contents: read
