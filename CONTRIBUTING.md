@@ -4,6 +4,18 @@ Thanks for helping improve this skill. It teaches an LLM (and now a deterministi
 engine) to spot and fix AI-writing tells. Contributions are welcome — a few things
 keep the project coherent.
 
+## Choosing an issue
+
+Issues labeled `good first issue` are reserved for people making their first
+contribution to this repository. Check the assignee and comments, then comment
+on one unclaimed issue before starting. Take only one `good first issue` for
+your first PR; leave the others for fellow newcomers, including while your PR
+is awaiting review.
+
+If you've already contributed here, choose a `help wanted` issue without the
+`good first issue` label, propose another improvement, or help review and test
+newcomer PRs.
+
 ## How the repo fits together
 
 | Path | What it holds |
@@ -31,6 +43,21 @@ First decide which kind of rule it is:
 If you are unsure which it is, open an issue first and we will sort it out.
 The [pattern proposal form](https://github.com/conorbronsdon/avoid-ai-writing/issues/new?template=pattern_proposal.yml)
 asks for what triage needs, including the example that must stay clean.
+
+### Pattern-category count (detection catalog)
+
+When you add or remove a detection `###` under `## What to remove or fix` in
+`references/patterns.md` (not judgment-only prose or writer-side tests), CI
+derives the new total and compares it to two literals:
+
+1. **`README.md`** — update the `**NN pattern categories**` feature bullet to
+   match the derived count.
+2. **`CLAUDE.md`** — update the quoted `README "NN pattern categories" bullet`
+   phrase in the pattern-count guidance so it matches the same number.
+
+`scripts/check-pattern-count.sh` enforces both on every PR. Adding a word-table
+row instead only requires bumping the separate `**NN-entry word replacement
+table**` README bullet (same script).
 
 ## Precision over recall
 

@@ -11,3 +11,4 @@
 - [ ] Any factual claim about how AI or humans write (e.g. "ChatGPT emits X", "humans rarely do Y") cites a source
 - [ ] The prose I added passes the skill's own audit (no AI-writing tells, terse bullets, no hollow intensifiers)
 - [ ] `CHANGELOG.md` entry added under a dated `## [X.Y.Z]` heading, and `SKILL.md` `version:` bumped if a rule changed
+- [ ] If I added or removed a detection `###` in `references/patterns.md`: the `**NN pattern categories**` bullet in `README.md` and the quoted count in `CLAUDE.md` match `scripts/check-pattern-count.sh`
