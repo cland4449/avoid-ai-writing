@@ -256,7 +256,7 @@ function main() {
   const args = process.argv.slice(2);
   const UNITS = ['paragraph', 'document'];
   const bad = () => {
-    console.error('Error: Invalid --unit option. Accepted values are "paragraph" and "document".');
+    console.error('Error: Invalid --unit option. Pass it once as --unit VALUE, with VALUE either "paragraph" or "document".');
     process.exit(2);
   };
   const flags = args.filter((a) => a === '--unit' || a.startsWith('--unit='));
