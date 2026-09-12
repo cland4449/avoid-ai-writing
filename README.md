@@ -344,7 +344,7 @@ Two writer-side **tests** round out the catalog (judgment checks, not auto-detec
 
 > Acme Analytics, a Boulder-based startup, raised a $40M Series B led by Sequoia, with participation from Andreessen Horowitz, Y Combinator, and Index Ventures.
 >
-> Its observability platform gives engineering teams real-time dashboards, queries that run in under a second, and an integration layer. Acme says the platform helps engineers resolve incidents faster and supports collaboration across frontend, SRE, platform, and infrastructure teams. Customer adoption is accelerating, and the company plans to expand its go-to-market work.
+> Its observability platform gives engineering teams real-time dashboards, queries that run in under a second, and an integration layer. Acme says the platform helps engineers resolve incidents faster and supports collaboration across frontend, SRE, platform, and infrastructure teams. Customer adoption is accelerating. Acme has invested in R&D for years and plans to expand its go-to-market work in a crowded monitoring market.
 
 **Claims needing sources:** The input attributes a prediction about a $15B market to unnamed experts and a 40% improvement in issue identification to unspecified studies. Verify those sources before publishing the claims. The rewrite leaves them out; it does not replace them with invented benchmarks, customers, or plans. The product and adoption statements above also remain supplied claims, not independently verified facts.
 
