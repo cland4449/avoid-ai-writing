@@ -550,8 +550,11 @@ const AIDetector = (() => {
     // Multiline flag (/m) so `^` matches at every line start, including
     // position 0 of a pasted text that has no leading newline. The earlier
     // `(?:^|\n)` form silently missed bare openers at the very start of
-    // input — caught by silent-failure audit 2026-05-16.
-    /^\s*interesting\s+(?:part|thing|aspect|piece)(?:\s+of\s+(?:the\s+)?\w+)?\s*:/gim,
+    // input — caught by silent-failure audit 2026-05-16. Leading whitespace
+    // is `[ \t]*`, not `\s*`: with /m every line start is a match attempt,
+    // and a `\s*` that can cross newlines rescans the whole blank run from
+    // each of them, which made a long masked block quadratic (#235).
+    /^[ \t]*interesting\s+(?:part|thing|aspect|piece)(?:\s+of\s+(?:the\s+)?\w+)?\s*:/gim,
   ];
 
   // ─── Lingering-attention claims ────────────────────────────────────
@@ -1290,10 +1293,15 @@ const AIDetector = (() => {
 
   function maskMarkdownTables(chars) {
     const lines = chars.join('').split('\n');
-    const delimiter = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*\r?$/;
+    // Tested against the trimmed line: the pattern already allows surrounding
+    // whitespace, and its adjacent `\s*` groups backtrack quadratically on a
+    // long whitespace run, so a line of masked comments or blank padding
+    // cost seconds before it was rejected (#235).
+    const delimiter = /^\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?$/;
     const rows = new Set();
     for (let i = 0; i < lines.length; i += 1) {
-      if (!delimiter.test(lines[i])) continue;
+      const candidate = lines[i].trim();
+      if (!candidate.includes('---') || !delimiter.test(candidate)) continue;
       if (i > 0 && lines[i - 1].includes('|')) rows.add(i - 1);
       rows.add(i);
       for (let j = i + 1; j < lines.length && lines[j].includes('|'); j += 1) rows.add(j);
@@ -2408,21 +2416,65 @@ const AIDetector = (() => {
 
   // ═══ Sentence regions + trinary classifier ═════════════════════════
 
+  // Coarse sentence spans over the whole text, as [start, end) offsets.
+  // Produces the same spans as the former /[^.!?]+[.!?]+|\S[^.!?]*$/g scan:
+  // each span runs from the end of the previous one through the next run of
+  // terminators, and a trailing fragment with no terminator starts at its
+  // first non-space character. The regex version backtracked to the end of
+  // the input at every position of a long terminator-free run, so a document
+  // that ended in blank lines, or whose masked comments became whitespace,
+  // cost O(n^2) (#235). This scan touches each character a bounded number
+  // of times.
+  const SENTENCE_TERMINATOR_RUN = /[.!?]+/g;
+  const FIRST_NON_SPACE = /\S/g;
+  function splitSentenceSpans(text) {
+    const spans = [];
+    const length = text.length;
+    let pos = 0;
+    while (pos < length) {
+      SENTENCE_TERMINATOR_RUN.lastIndex = pos;
+      const run = SENTENCE_TERMINATOR_RUN.exec(text);
+      if (run === null) {
+        FIRST_NON_SPACE.lastIndex = pos;
+        const head = FIRST_NON_SPACE.exec(text);
+        if (head !== null) spans.push([head.index, length]);
+        break;
+      }
+      if (run.index === pos) {
+        // A terminator with no sentence body before it only counts as the
+        // trailing fragment when nothing after it ends a sentence.
+        SENTENCE_TERMINATOR_RUN.lastIndex = pos + 1;
+        if (SENTENCE_TERMINATOR_RUN.exec(text) === null) {
+          spans.push([pos, length]);
+          break;
+        }
+        pos += 1;
+        continue;
+      }
+      const end = run.index + run[0].length;
+      spans.push([pos, end]);
+      pos = end;
+    }
+    return spans;
+  }
+
   function buildSentenceRegions(text, issues, trimBoundaryWhitespace = false) {
     // Split text into sentences with source offsets preserved so the UI
     // can highlight spans accurately. Sentence boundaries are coarse
     // (.!?) — fine for highlighting, not for linguistic correctness.
     const sentences = [];
-    const sentenceRe = /[^.!?]+[.!?]+|\S[^.!?]*$/g;
-    let m;
-    while ((m = sentenceRe.exec(text)) !== null) {
-      const sentenceText = m[0].trim();
+    for (const [spanStart, spanEnd] of splitSentenceSpans(text)) {
+      const raw = text.slice(spanStart, spanEnd);
+      const sentenceText = raw.trim();
       if (sentenceText.length < 4) continue;
-      let start = m.index;
-      let end = m.index + m[0].length;
+      let start = spanStart;
+      let end = spanEnd;
       if (trimBoundaryWhitespace) {
-        start += m[0].search(/\S/);
-        end -= m[0].match(/\s*$/)[0].length;
+        // trimStart/trimEnd, not `\s*$`: that regex retries from every
+        // position of a leading whitespace run and was quadratic on a span
+        // that began with a masked comment block (#235).
+        start += raw.length - raw.trimStart().length;
+        end -= raw.length - raw.trimEnd().length;
       }
       sentences.push({ start, end, text: sentenceText });
     }
