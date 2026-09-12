@@ -44,13 +44,75 @@ const AIDetector = (() => {
   };
   const GREEK_LOOKALIKES = { 'ο': 'o', 'Ο': 'O', 'α': 'a', 'Α': 'A', 'ρ': 'p', 'Ρ': 'P' };
 
-  function normalizeText(text) {
+  // ─── Source-coordinate map (issue #189) ─────────────────────────────
+  //
+  // Preprocessing deletes characters: `normalizeText` strips zero-width
+  // chars and *roleplay-action* markers, and plain mode drops whole quoted
+  // lines. Masking stages never delete — they blank spans in place so the
+  // string keeps its length — but those deletions shrink the working
+  // string, so `match.index` and sentence boundaries no longer address the
+  // caller's input. This map records each removed span (in original source
+  // code units) as preprocessing runs, so any coordinate in the final
+  // working string can be translated back to the original input. Nothing
+  // inserts or reorders, so the translation is monotonic and unambiguous
+  // for live positions. `this.text` is the deletions-only copy and always
+  // indexes identically to the caller's final working string.
+  function createOffsetMap(text) {
+    return {
+      text,            // mutated by record() — mirrors preprocessed deletions
+      runs: [],        // ascending, disjoint [srcStart, srcEnd) spans
+      // Forward: source position -> working position. Only meaningful at
+      // live positions (run starts), where every earlier run is fully past.
+      forward(p) {
+        let removed = 0;
+        for (const [s, e] of this.runs) {
+          if (p >= e) removed += e - s;
+        }
+        return p - removed;
+      },
+      // Inverse: working position -> original source position.
+      inverse(k) {
+        let p = k;
+        for (const [s, e] of this.runs) {
+          if (p >= s) p += e - s;
+        }
+        return p;
+      },
+      record(start, end) {
+        const curStart = this.forward(start);
+        const len = end - start;
+        this.text = this.text.slice(0, curStart) + this.text.slice(curStart + len);
+        this.runs.push([start, end]);
+      },
+    };
+  }
+
+  function normalizeText(text, coordMap) {
     const flags = { zeroWidth: 0, homoglyph: 0, roleplay: 0 };
     let out = text;
 
+    // Replace-pass offsets are positions in the string handed to `.replace()`
+    // (this pass's input), stable for every match — not offsets into a buffer
+    // that shrinks as earlier matches are removed. So each pass translates its
+    // match offsets to source coordinates against the map state that existed
+    // when that pass STARTED (only prior stages' deletions), then hands
+    // record() the resulting SOURCE spans. Translating against the live runs
+    // as records accumulate would shift each later match past the deletions
+    // this same pass just recorded, corrupting coordMap.text.
+    const srcIn = (snap, k) => {
+      let p = k;
+      for (const [s, e] of snap) if (p >= s) p += e - s;
+      return p;
+    };
+
     // 1. Strip zero-width chars (ZWSP U+200B, ZWNJ U+200C, ZWJ U+200D,
     //    BOM U+FEFF, word joiner U+2060).
-    out = out.replace(/[​-‍﻿⁠]/g, () => { flags.zeroWidth++; return ''; });
+    const zwSnap = coordMap ? coordMap.runs.slice() : null;
+    out = out.replace(/[​-‍﻿⁠]/g, (m, offset) => {
+      flags.zeroWidth++;
+      if (coordMap) coordMap.record(srcIn(zwSnap, offset), srcIn(zwSnap, offset + m.length));
+      return '';
+    });
 
     // 2. Swap Cyrillic / Greek Latin-lookalike chars back to Latin so
     //    pattern matching catches obfuscated tokens.
@@ -67,8 +129,13 @@ const AIDetector = (() => {
     //    lookbehind/lookahead; legitimate multi-word `*italic*` is
     //    preserved because the verb whitelist is narrow.
     const ROLEPLAY_VERBS = /^(?:nods|sighs|laughs|smiles|frowns|shrugs|grins|winks|chuckles|gasps|pauses|thinks|wonders|whispers|shouts|gestures|raises|leans|turns|looks|glances|smirks|blinks|nodding|sighing|laughing|smiling|thinking|gesturing)\b/i;
-    out = out.replace(/(?<!\*)\*([^*\n]{1,80}?)\*(?!\*)/gu, (m, inner) => {
-      if (ROLEPLAY_VERBS.test(inner)) { flags.roleplay++; return ''; }
+    const rpSnap = coordMap ? coordMap.runs.slice() : null;
+    out = out.replace(/(?<!\*)\*([^*\n]{1,80}?)\*(?!\*)/gu, (m, inner, offset) => {
+      if (ROLEPLAY_VERBS.test(inner)) {
+        flags.roleplay++;
+        if (coordMap) coordMap.record(srcIn(rpSnap, offset), srcIn(rpSnap, offset + m.length));
+        return '';
+      }
       return m;
     });
 
@@ -983,13 +1050,48 @@ const AIDetector = (() => {
   // Keep the historical deletion behavior for default plain mode. Paragraph-
   // scoped rules depend on the surrounding lines being rejoined exactly this
   // way, so changing this prepass would change scores for existing callers.
-  function stripMultilineBlockquotes(text) {
+  function stripMultilineBlockquotes(text, coordMap) {
     const rawLines = text.split(/\r?\n/);
     const isQuote = rawLines.map((line) => /^\s*>\s/.test(line));
     const stripIndexes = new Set();
     for (let i = 0; i < rawLines.length; i += 1) {
       if (isQuote[i] && ((isQuote[i - 1] && i > 0) || isQuote[i + 1])) stripIndexes.add(i);
     }
+
+    // Record every character the join below actually drops, in original
+    // source coordinates, so reported issue/highlight offsets translate
+    // back to the caller's input exactly. Two kinds of spans:
+    //   - a stripped line removes its whole span, terminator included;
+    //   - a kept CRLF line is re-joined as '\n', so its '\r' alone is dropped.
+    // These spans index `text`, which is the caller's raw input in this
+    // stage (no deletion has run yet in plain mode), so they are already
+    // source coordinates and go straight to record(). Passing them back
+    // through inverse() would shift a source position past its own run.
+    if (coordMap) {
+      const spans = [];
+      const lineStarts = [];
+      let offset = 0;
+      for (let i = 0; i < rawLines.length; i += 1) {
+        lineStarts.push(offset);
+        const nextLf = text.indexOf('\n', offset + rawLines[i].length);
+        offset = nextLf === -1 ? text.length : nextLf + 1;
+      }
+      for (let i = 0; i < rawLines.length; i += 1) {
+        const start = lineStarts[i];
+        if (stripIndexes.has(i)) {
+          spans.push([start, i < rawLines.length - 1 ? lineStarts[i + 1] : text.length]);
+        } else if (text[start + rawLines[i].length] === '\r') {
+          // Kept CRLF line, blank lines included: the rejoin emits a single
+          // '\n', so the separator's '\r' alone (located right after the
+          // line's content) is dropped and must be recorded.
+          spans.push([start + rawLines[i].length, start + rawLines[i].length + 1]);
+        }
+      }
+      for (const [s, e] of spans) {
+        coordMap.record(s, e);
+      }
+    }
+
     return {
       text: rawLines.filter((_, i) => !stripIndexes.has(i)).join('\n'),
       quotedLines: stripIndexes.size,
@@ -1388,6 +1490,13 @@ const AIDetector = (() => {
       return { ...buildV2Defaults('UNSCORED', 'low'), score: 0, label: 'Empty', issues: [], stats: {}, tooShort: true };
     }
 
+    // Coordinate map over the caller's original string. Preprocessing may
+    // delete characters (plain-mode blockquote lines, zero-width chars,
+    // roleplay markers); anything that reports an offset into the working
+    // string is translated back through this map before it leaves the
+    // function, so issue.index and highlight ranges address the input.
+    const coordMap = createOffsetMap(text);
+
     // Context mode selects context-appropriate flagging. Accepted values:
     //   'general' (default) — full ruleset
     //   'technical' — skip title-case headers; individual prose-only rules
@@ -1429,14 +1538,15 @@ const AIDetector = (() => {
     // keeps later issue and highlight offsets aligned with the source file.
     const blockquotes = sourceMode === 'rendered-markdown'
       ? maskMultilineBlockquotes(text)
-      : stripMultilineBlockquotes(text);
+      : stripMultilineBlockquotes(text, coordMap);
     text = blockquotes.text;
     const { quotedLines } = blockquotes;
 
     // Pre-pass: strip bypass-trick chars before pattern matching so
-    // "delve" with a Cyrillic 'е' still hits Tier 1. Original text is
-    // preserved so reported `match.index` values remain visually accurate.
-    const norm = normalizeText(text);
+    // "delve" with a Cyrillic 'е' still hits Tier 1. The coordinator is
+    // passed along so every dropped span is recorded; issue and highlight
+    // offsets are remapped to the source just before the result is built.
+    const norm = normalizeText(text, coordMap);
     text = norm.text;
 
     const wordCount = countWords(text);
@@ -2147,6 +2257,19 @@ const AIDetector = (() => {
       denseAIVocab,
     });
 
+    // Translate every offset produced against the (shortened) working
+    // string back to the caller's original input. Both the dense issue
+    // index and the coarser sentence-highlight boundaries must align.
+    for (const issue of deduped) {
+      if (Number.isInteger(issue.index)) {
+        issue.index = coordMap.inverse(issue.index);
+      }
+    }
+    for (const region of regions) {
+      region.start = coordMap.inverse(region.start);
+      region.end   = coordMap.inverse(region.end);
+    }
+
     return {
       // Legacy fields preserved for existing callers.
       score: normalizedScore,
@@ -2478,6 +2601,7 @@ const AIDetector = (() => {
   return {
     analyzeText,
     normalizeText,
+    createOffsetMap,
     getLabel,
     getColor,
     SEVERITY_LABELS,
