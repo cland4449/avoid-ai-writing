@@ -996,6 +996,136 @@ const AIDetector = (() => {
     return { start: 0, end: lines[closingLine].end };
   }
 
+  // Mask HTML comments in source order while tracking the Markdown constructs
+  // that protect a literal `<!--`. A comment wins over code delimiters that
+  // occur inside it; a fence, code span, or top-level indented block that
+  // starts first wins over comment-looking text inside that code. Each source
+  // character participates in a bounded number of forward scans.
+  function maskHtmlCommentsOutsideCode(chars) {
+    const source = chars.join('');
+    const lines = source.split('\n');
+    let offset = 0;
+    let openFence = null;
+    let inIndentedBlock = false;
+    let previousBlank = true;
+    let listContext = false;
+    let maskedHtmlComments = 0;
+    const commentClosings = [];
+    let closingCursor = 0;
+
+    for (let i = 0; i <= source.length - 3; i += 1) {
+      if (source[i] === '-' && source[i + 1] === '-' && source[i + 2] === '>') {
+        commentClosings.push(i);
+      }
+    }
+
+    const backtickRuns = (line) => {
+      const runs = [];
+      for (let i = 0; i < line.length;) {
+        if (line[i] !== '`') {
+          i += 1;
+          continue;
+        }
+        const start = i;
+        while (i < line.length && line[i] === '`') i += 1;
+        runs.push({ start, end: i, length: i - start, next: -1 });
+      }
+      const nextByLength = new Map();
+      for (let i = runs.length - 1; i >= 0; i -= 1) {
+        runs[i].next = nextByLength.get(runs[i].length) ?? -1;
+        nextByLength.set(runs[i].length, i);
+      }
+      return runs;
+    };
+
+    for (const originalLine of lines) {
+      const lineEnd = offset + originalLine.length;
+      let visibleLine = chars.slice(offset, lineEnd).join('');
+      const fenceMatch = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/.exec(visibleLine);
+      let fencedLine = false;
+
+      if (openFence) {
+        fencedLine = true;
+        if (
+          fenceMatch
+          && fenceMatch[1][0] === openFence.char
+          && fenceMatch[1].length >= openFence.length
+          && /^[ \t]*\r?$/.test(fenceMatch[2])
+        ) openFence = null;
+      } else if (fenceMatch) {
+        fencedLine = true;
+        openFence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      }
+
+      const indented = /^(?: {4}|\t)\S/.test(visibleLine);
+      const indentedCode = !fencedLine
+        && indented
+        && (inIndentedBlock || (previousBlank && !listContext));
+
+      if (!fencedLine && !indentedCode) {
+        const runs = backtickRuns(visibleLine);
+        let runIndex = 0;
+        let cursor = 0;
+
+        while (cursor < visibleLine.length) {
+          while (runIndex < runs.length && runs[runIndex].start < cursor) runIndex += 1;
+          const commentIndex = visibleLine.indexOf('<!--', cursor);
+          const run = runs[runIndex];
+
+          if (run && (commentIndex === -1 || run.start < commentIndex)) {
+            if (run.next !== -1) {
+              cursor = runs[run.next].end;
+              runIndex = run.next + 1;
+            } else {
+              cursor = run.end;
+              runIndex += 1;
+            }
+            continue;
+          }
+          if (commentIndex === -1) break;
+
+          const openingIndex = offset + commentIndex;
+          while (
+            closingCursor < commentClosings.length
+            && commentClosings[closingCursor] < openingIndex + 2
+          ) closingCursor += 1;
+          const closingIndex = commentClosings[closingCursor] ?? -1;
+          const end = closingIndex === -1 ? source.length : closingIndex + 3;
+          if (closingIndex !== -1) closingCursor += 1;
+          blankRange(chars, openingIndex, end);
+          maskedHtmlComments += 1;
+          cursor = Math.min(visibleLine.length, end - offset);
+        }
+      }
+
+      visibleLine = chars.slice(offset, lineEnd).join('');
+      const layoutChars = visibleLine.split('');
+      if (fencedLine) {
+        blankRange(layoutChars, 0, layoutChars.length);
+      } else {
+        const inlineRe = /(`+)(?:(?!\1)[^\n])+\1/g;
+        let inlineMatch;
+        while ((inlineMatch = inlineRe.exec(visibleLine)) !== null) {
+          blankRange(layoutChars, inlineMatch.index, inlineMatch.index + inlineMatch[0].length);
+        }
+      }
+      const layoutLine = layoutChars.join('');
+      const blank = layoutLine.trim() === '';
+
+      if (indentedCode) inIndentedBlock = true;
+      else if (!blank) inIndentedBlock = false;
+
+      if (!blank && !indentedCode && !fencedLine) {
+        if (/^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:\s|$)/.test(layoutLine)) listContext = true;
+        else if (/^\S/.test(layoutLine)) listContext = false;
+      }
+      previousBlank = blank;
+      offset = lineEnd + 1;
+    }
+
+    return maskedHtmlComments;
+  }
+
   // Mask source-only Markdown spans while preserving source offsets. The
   // detector can then score what a reader sees without making later issue
   // indexes or sentence highlights point at the wrong source location.
@@ -1009,57 +1139,7 @@ const AIDetector = (() => {
       maskedFrontmatter = 1;
     }
 
-    // maskCode is index-preserving; blank comment spans in the same layer so
-    // fenced/inline delimiters inside removed comments cannot affect later scans.
-    const codeBaseChars = maskCode(chars.join('')).split('');
-    const commentScanChars = codeBaseChars.slice();
-    maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
-    const refreshCodeBaseFromChars = () => {
-      const refreshed = maskCode(chars.join('')).split('');
-      for (let i = 0; i < refreshed.length; i += 1) codeBaseChars[i] = refreshed[i];
-    };
-    const refreshCommentScan = () => {
-      refreshCodeBaseFromChars();
-      for (let i = 0; i < codeBaseChars.length; i += 1) commentScanChars[i] = codeBaseChars[i];
-      maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
-    };
-    const refreshIndentedListScan = () => {
-      for (let i = 0; i < codeBaseChars.length; i += 1) commentScanChars[i] = codeBaseChars[i];
-      maskTopLevelIndentedCode(commentScanChars, { listAware: true, lineSource: chars });
-    };
-    const commentAffectsListContext = (start, end) => {
-      for (const line of text.slice(start, end).split('\n')) {
-        if (/^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:\s|$)/.test(line)) return true;
-      }
-      return false;
-    };
-    const commentAffectsCodeMask = (start, end) => /[`]/.test(text.slice(start, end));
-    const findCommentOpen = (fromIndex) => {
-      for (let i = fromIndex; i <= commentScanChars.length - 4; i += 1) {
-        if (
-          commentScanChars[i] === '<'
-          && commentScanChars[i + 1] === '!'
-          && commentScanChars[i + 2] === '-'
-          && commentScanChars[i + 3] === '-'
-        ) return i;
-      }
-      return -1;
-    };
-    let maskedHtmlComments = 0;
-    let searchIndex = 0;
-    while (searchIndex < text.length) {
-      const openingIndex = findCommentOpen(searchIndex);
-      if (openingIndex === -1) break;
-      const closingIndex = text.indexOf('-->', openingIndex + 2);
-      const end = closingIndex === -1 ? text.length : closingIndex + 3;
-      blankRange(chars, openingIndex, end);
-      blankRange(codeBaseChars, openingIndex, end);
-      blankRange(commentScanChars, openingIndex, end);
-      maskedHtmlComments += 1;
-      searchIndex = end;
-      if (commentAffectsCodeMask(openingIndex, end)) refreshCommentScan();
-      else if (commentAffectsListContext(openingIndex, end)) refreshIndentedListScan();
-    }
+    const maskedHtmlComments = maskHtmlCommentsOutsideCode(chars);
 
     return { text: chars.join(''), maskedFrontmatter, maskedHtmlComments };
   }
@@ -1130,8 +1210,8 @@ const AIDetector = (() => {
     return { ...result, sourceMap: mapped };
   }
 
-  function maskTopLevelIndentedCode(chars, { listAware = false, lineSource = null } = {}) {
-    const lines = (lineSource || chars).join('').split('\n');
+  function maskTopLevelIndentedCode(chars, { listAware = false } = {}) {
+    const lines = chars.join('').split('\n');
     let offset = 0;
     let inBlock = false;
     let previousBlank = true;
