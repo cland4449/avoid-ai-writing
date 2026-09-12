@@ -25,14 +25,8 @@ const SPLITS = ['development', 'heldout'];
 const MODES = ['rewrite', 'edit'];
 const DECISIONS = ['preserve', 'change'];
 const PROFILES = ['linkedin', 'blog', 'technical-blog', 'investor-email', 'docs', 'casual'];
-const MAX_PATTERN_LENGTH = 200;
-// Case patterns run against model output in report(), so a pattern that
-// backtracks exponentially on a near-miss would hang the report rather than
-// fail it. Rather than try to recognise every dangerous shape ((a+)+, (a|aa)+,
-// (a*)*), the accepted subset forbids repeating a group at all: `+`, `*` and
-// `{n,m}` may follow a character, class or escape, and `?` may follow a group.
-// Unrepeated alternation and optional groups stay available.
-const REPEATED_GROUP = /\)[+*{]/;
+const MAX_PHRASE_LENGTH = 200;
+const MATCHER_KEYS = ['id', 'any', 'note'];
 
 const hash = (x) => crypto.createHash('sha256').update(typeof x === 'string' ? x : JSON.stringify(x)).digest('hex');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -62,12 +56,43 @@ function checkProtocol(protocol) {
   for (const k of ['release_policy', 'heldout_policy']) assert(nonempty(protocol[k]), `protocol.${k} required`);
 }
 
-function checkPattern(rule, where) {
-  assert(isObject(rule) && nonempty(rule.id) && nonempty(rule.pattern), `${where}: pattern rules need id and pattern`);
-  assert(rule.pattern.length <= MAX_PATTERN_LENGTH, `${where}/${rule.id}: pattern longer than ${MAX_PATTERN_LENGTH} characters`);
-  assert(!REPEATED_GROUP.test(rule.pattern), `${where}/${rule.id}: a repeated group (+, * or {n,m} after a closing parenthesis) can backtrack exponentially; repeat single characters or classes instead`);
-  new RegExp(rule.pattern, 'i');
+// Case constraints are lists of literal phrases, not regular expressions. They
+// run against model output at report time, and no cheaply validated regex
+// subset bounds matching work: `^a*a*a*a*b$` repeats no group and still takes
+// seconds on a hundred characters. A phrase matches when it occurs in the text
+// with whitespace runs collapsed, ignoring case, and, where the phrase starts
+// or ends with an ASCII word character, at a word boundary, so "led by" does
+// not match "handled by". Matching uses indexOf only.
+function checkMatcher(rule, where) {
+  assert(isObject(rule) && nonempty(rule.id), `${where}: matcher rules need an id`);
+  assert(rule.pattern === undefined, `${where}/${rule.id}: regular expressions are not accepted; list literal phrases under "any"`);
+  for (const k of Object.keys(rule)) assert(MATCHER_KEYS.includes(k), `${where}/${rule.id}: unknown key ${k}`);
+  assert(Array.isArray(rule.any) && rule.any.length > 0 && rule.any.every(nonempty), `${where}/${rule.id}: "any" must list at least one phrase`);
+  for (const phrase of rule.any) assert(phrase.length <= MAX_PHRASE_LENGTH, `${where}/${rule.id}: phrase longer than ${MAX_PHRASE_LENGTH} characters`);
+  if (rule.note !== undefined) assert(nonempty(rule.note), `${where}/${rule.id}: note must be a non-empty string`);
 }
+
+const collapse = (s) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+const isWordChar = (ch) => ch !== undefined && /[a-z0-9_]/.test(ch);
+
+function phraseOccurs(phrase, text) {
+  const needle = collapse(phrase);
+  const haystack = collapse(text);
+  if (!needle) return false;
+  const boundStart = isWordChar(needle[0]);
+  const boundEnd = isWordChar(needle[needle.length - 1]);
+  let from = 0;
+  for (;;) {
+    const i = haystack.indexOf(needle, from);
+    if (i === -1) return false;
+    const startOk = !boundStart || !isWordChar(haystack[i - 1]);
+    const endOk = !boundEnd || !isWordChar(haystack[i + needle.length]);
+    if (startOk && endOk) return true;
+    from = i + 1;
+  }
+}
+
+const matcherHits = (rule, text) => rule.any.some((phrase) => phraseOccurs(phrase, text));
 
 function validateCases(cases, protocol = loadProtocol()) {
   checkProtocol(protocol);
@@ -87,10 +112,11 @@ function validateCases(cases, protocol = loadProtocol()) {
     assert(PROFILES.includes(c.profile), `${c.id}: unknown profile ${c.profile}`);
     for (const k of ['claims', 'protected', 'allowed_edits']) assert(Array.isArray(c[k]) && c[k].every(nonempty), `${c.id}: ${k} must be an array of non-empty strings`);
     assert(c.claims.length && c.allowed_edits.length, `${c.id}: claims and allowed_edits required`);
-    for (const k of ['required_patterns', 'forbidden_patterns']) {
+    for (const k of ['required_patterns', 'forbidden_patterns']) assert(c[k] === undefined, `${c.id}: ${k} is no longer accepted; use ${k.replace('patterns', 'phrases')} with literal phrases`);
+    for (const k of ['required_phrases', 'forbidden_phrases']) {
       if (c[k] === undefined) continue;
       assert(Array.isArray(c[k]), `${c.id}: ${k} must be an array`);
-      for (const rule of c[k]) checkPattern(rule, `${c.id}/${k}`);
+      for (const rule of c[k]) checkMatcher(rule, `${c.id}/${k}`);
     }
     for (const span of c.protected) assert(c.source.includes(span), `${c.id}: absent protected span`);
     for (const [field, map] of Object.entries(owners)) {
@@ -409,8 +435,8 @@ function report(plan, rows, key, judgments, options = {}) {
     return {
       task_id: t.id,
       missing_protected_spans: c.protected.filter((s) => !r.final_text.includes(s)),
-      missing_required_patterns: (c.required_patterns || []).filter((x) => !new RegExp(x.pattern, 'i').test(r.final_text)).map((x) => x.id),
-      forbidden_patterns: (c.forbidden_patterns || []).filter((x) => new RegExp(x.pattern, 'i').test(r.final_text)).map((x) => x.id),
+      missing_required_phrases: (c.required_phrases || []).filter((x) => !matcherHits(x, r.final_text)).map((x) => x.id),
+      forbidden_phrases: (c.forbidden_phrases || []).filter((x) => matcherHits(x, r.final_text)).map((x) => x.id),
       unchanged: r.final_text === c.source,
       sub_span_extraction: r.final_text.trim() !== r.raw_output.trim(),
     };
@@ -473,4 +499,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { hash, validateCases, checkProtocol, prepare, checkPlan, checkResults, blind, checkBallot, report };
+module.exports = { hash, validateCases, checkProtocol, phraseOccurs, prepare, checkPlan, checkResults, blind, checkBallot, report };

@@ -350,7 +350,7 @@
     "author_id": "fictional-ferraro",
     "profile": "investor-email",
     "mode": "edit",
-    "source": "Certainly! Acme Analytics, a vibrant startup nestled in the heart of Boulder's thriving tech ecosystem, has secured $40M in Series B funding \u2014 marking a watershed moment for the observability landscape. The platform serves as a unified hub, featuring real-time dashboards, boasting sub-second queries, and presenting a seamless integration layer. Moreover, experts believe Acme is poised to disrupt the market. In conclusion, the future looks bright!",
+    "source": "Certainly! Acme Analytics, a vibrant startup nestled in the heart of Boulder's thriving tech ecosystem, has secured $40M in Series B funding — marking a watershed moment for the observability landscape. The platform serves as a unified hub, featuring real-time dashboards, boasting sub-second queries, and presenting a seamless integration layer. Moreover, experts believe Acme is poised to disrupt the market. In conclusion, the future looks bright!",
     "decision": "change",
     "claims": [
       "Acme Analytics is based in Boulder.",
@@ -365,67 +365,121 @@
     "review_focus": "Do not add an investor, a named integration target, a customer count, or an integration mechanism. Keep the dashboards, the latency and the integration layer. The unsupported prediction may be omitted.",
     "license": "MIT",
     "provenance": "Original synthetic fixture written for this repository; not a real user draft.",
-    "required_patterns": [
+    "seed_case": "readme-quick-demo",
+    "required_phrases": [
       {
         "id": "company",
-        "pattern": "Acme Analytics"
+        "any": [
+          "Acme Analytics"
+        ]
       },
       {
         "id": "round",
-        "pattern": "\\$40(?:M| million)"
+        "any": [
+          "$40M",
+          "$40 million"
+        ]
       },
       {
         "id": "stage",
-        "pattern": "Series B"
+        "any": [
+          "Series B"
+        ]
       },
       {
         "id": "location",
-        "pattern": "Boulder"
+        "any": [
+          "Boulder"
+        ]
       },
       {
         "id": "domain",
-        "pattern": "observability"
+        "any": [
+          "observability"
+        ]
       },
       {
         "id": "dashboards",
-        "pattern": "(?:real[- ]time|live|continuously updated) dashboards|dashboards that (?:update|refresh) (?:in )?real[- ]time"
+        "any": [
+          "real-time dashboards",
+          "real time dashboards",
+          "live dashboards",
+          "dashboards that update in real time",
+          "dashboards update in real time",
+          "continuously updated dashboards",
+          "dashboards that refresh in real time",
+          "dashboards that update in real-time",
+          "dashboards that refresh in real-time"
+        ]
       },
       {
         "id": "latency",
-        "pattern": "(under (?:a|one|1) second|sub-second)"
+        "any": [
+          "under a second",
+          "under one second",
+          "under 1 second",
+          "sub-second",
+          "sub second",
+          "in under a second"
+        ]
       },
       {
         "id": "integration",
-        "pattern": "integration layer"
+        "any": [
+          "integration layer"
+        ]
       }
     ],
-    "forbidden_patterns": [
+    "forbidden_phrases": [
       {
         "id": "investor",
-        "pattern": "Sequoia"
+        "any": [
+          "Sequoia"
+        ]
       },
       {
         "id": "lead-investor-claim",
-        "pattern": "\\bled by\\b"
+        "any": [
+          "led by"
+        ]
       },
       {
         "id": "named-integration",
-        "pattern": "\\b(?:Datadog|Splunk|Grafana|New Relic|Prometheus|Elastic)\\b"
+        "any": [
+          "Datadog",
+          "Splunk",
+          "Grafana",
+          "New Relic",
+          "Prometheus",
+          "Elastic"
+        ]
       },
       {
         "id": "customer-count",
-        "pattern": "\\d+ (?:paying )?customers"
+        "any": [
+          "customer",
+          "customers",
+          "paying customers"
+        ],
+        "note": "The source names no customers, so any customer mention is invented."
       },
       {
         "id": "integration-mechanism",
-        "pattern": "without custom integration work|existing monitoring stacks"
+        "any": [
+          "without custom integration work",
+          "existing monitoring stacks"
+        ]
       },
       {
         "id": "integration-effort-claim",
-        "pattern": "plugs into|zero configuration|out of the box"
+        "any": [
+          "plugs into",
+          "zero configuration",
+          "out of the box",
+          "out-of-the-box"
+        ]
       }
-    ],
-    "seed_case": "readme-quick-demo"
+    ]
   },
   {
     "id": "clear-edit-05",

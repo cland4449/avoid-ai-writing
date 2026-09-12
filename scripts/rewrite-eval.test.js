@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { hash, validateCases, prepare, checkPlan, checkResults, blind, checkBallot, report } = require('./rewrite-eval');
+const { hash, validateCases, phraseOccurs, prepare, checkPlan, checkResults, blind, checkBallot, report } = require('./rewrite-eval');
 
 const cases = require('../evals/rewrite/cases.json');
 const protocol = require('../evals/rewrite/protocol.json');
@@ -17,14 +17,36 @@ const duplicate = clone(cases);
 duplicate[1].id = duplicate[0].id;
 throwsWith(() => validateCases(duplicate, protocol), /duplicate/, 'duplicate id');
 
-for (const pattern of ['^(a+)+$', '^(a|aa)+$', '(ab)*c', '(x){2,}']) {
-  const unsafe = clone(cases);
-  unsafe[0].required_patterns = [{ id: 'bad', pattern }];
-  throwsWith(() => validateCases(unsafe, protocol), /repeated group/, `unsafe pattern ${pattern}`);
+// Constraints are literal phrase lists. Regular expressions are refused at
+// validation, including shapes no group-based guard catches (^a*a*a*a*b$).
+for (const pattern of ['^(a+)+$', '^a*a*a*a*a*a*a*a*a*a*b$', 'Sequoia']) {
+  const regex = clone(cases);
+  regex[0].required_phrases = [{ id: 'bad', pattern }];
+  throwsWith(() => validateCases(regex, protocol), /regular expressions are not accepted/, `regex ${pattern}`);
 }
-const safe = clone(cases);
-safe[0].required_patterns = [{ id: 'ok', pattern: '\\d+ (?:paying )?customers|(under (?:a|one) second|sub-second)' }];
-validateCases(safe, protocol);
+const legacy = clone(cases);
+legacy[0].required_patterns = [{ id: 'old', pattern: 'x' }];
+throwsWith(() => validateCases(legacy, protocol), /no longer accepted/, 'legacy patterns key');
+const emptyAny = clone(cases);
+emptyAny[0].forbidden_phrases = [{ id: 'empty', any: [] }];
+throwsWith(() => validateCases(emptyAny, protocol), /at least one phrase/, 'empty any');
+const strayKey = clone(cases);
+strayKey[0].forbidden_phrases = [{ id: 'stray', any: ['x'], flags: 'i' }];
+throwsWith(() => validateCases(strayKey, protocol), /unknown key flags/, 'stray key');
+const phrased = clone(cases);
+phrased[0].required_phrases = [{ id: 'ok', any: ['paying customers', 'under a second'], note: 'either wording' }];
+validateCases(phrased, protocol);
+
+// Matching: case-insensitive, whitespace-collapsed, word-bounded at word ends.
+assert(phraseOccurs('led by', 'A $40M Series B led by Sequoia.'));
+assert(!phraseOccurs('led by', 'The rollout was handled by the platform team.'));
+assert(phraseOccurs('real-time dashboards', 'Real-Time   dashboards\nrefresh every second.'));
+assert(phraseOccurs('$40M', 'raised $40M in'));
+assert(!phraseOccurs('customer', 'customers'));
+assert(phraseOccurs('customers', 'for its 200 paying customers.'));
+const started = performance.now();
+assert(!phraseOccurs('b', 'a'.repeat(200000)));
+assert(performance.now() - started < 200, 'literal matching stays linear');
 
 const miscounted = clone(protocol);
 miscounted.case_count = 47;
@@ -33,7 +55,8 @@ throwsWith(() => validateCases(cases, miscounted), /group_size|47/, 'protocol co
 // ── Plan freeze ──────────────────────────────────────────────────────────
 const model = { id: 'test-editor', provider: 'test-only', version: 'synthetic-v1', family: 'test-only', settings: { temperature: 0 }, tools: [] };
 // The plan reads its corpus from git, so the fixture below uses plan.cases, the
-// committed set, rather than the working-tree file validated above.
+// committed set, rather than the working-tree file validated above. A case
+// schema change therefore has to be committed before this test can pass.
 const plan = prepare({ baseline: 'HEAD', candidate: 'HEAD', corpus: 'HEAD', split: 'development', models: [model] });
 assert.equal(plan.tasks.length, plan.protocol.split_sizes.development * plan.protocol.repetitions * plan.protocol.conditions.length);
 assert.equal(plan.sources.baseline.commit, plan.sources.candidate.commit);
@@ -203,12 +226,26 @@ throwsWith(() => report(plan, rows, key, twoVotes), /more than one preferred/, '
 
 // ── Mechanical checks ────────────────────────────────────────────────────
 const spanRow = rows.findIndex((r) => plan.cases.find((c) => c.id === plan.tasks.find((t) => t.id === r.task_id).case_id).protected.length);
+const demoRow = rows.findIndex((r) => plan.tasks.find((t) => t.id === r.task_id).case_id === 'clear-edit-04');
+assert(demoRow !== -1, 'seed case present in the development split');
 const damaged = clone(rows);
 damaged[spanRow].final_text = 'Content removed.';
 damaged[spanRow].raw_output = 'Content removed.';
 const b = blind(plan, damaged);
 const incomplete = report(plan, damaged, b.key, []);
 assert(incomplete.mechanical_checks.some((x) => x.missing_protected_spans.length));
+const invented = clone(rows);
+invented[demoRow].raw_output = 'Acme Analytics raised a $40M Series B led by Andreessen Horowitz. The Boulder startup makes an observability platform with real-time dashboards, sub-second queries, and an integration layer that plugs into Datadog with zero configuration for its 200 paying customers.';
+invented[demoRow].final_text = invented[demoRow].raw_output;
+const inventedReport = report(plan, invented, blind(plan, invented).key, []);
+const demoCheck = inventedReport.mechanical_checks.find((x) => x.task_id === invented[demoRow].task_id);
+assert.deepEqual(demoCheck.missing_required_phrases, []);
+assert.deepEqual(demoCheck.forbidden_phrases.sort(), ['customer-count', 'integration-effort-claim', 'lead-investor-claim', 'named-integration']);
+const faithful = clone(rows);
+faithful[demoRow].raw_output = 'Acme Analytics raised a $40M Series B. The Boulder startup makes an observability platform with live dashboards, queries that return in under a second, and an integration layer.';
+faithful[demoRow].final_text = faithful[demoRow].raw_output;
+const faithfulCheck = report(plan, faithful, blind(plan, faithful).key, []).mechanical_checks.find((x) => x.task_id === faithful[demoRow].task_id);
+assert.deepEqual([faithfulCheck.missing_required_phrases, faithfulCheck.forbidden_phrases], [[], []]);
 assert.equal(incomplete.human_reviewed, 0);
 assert.equal(incomplete.complete, false);
 

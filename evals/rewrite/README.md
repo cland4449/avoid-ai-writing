@@ -41,11 +41,13 @@ edits, contextual judgments, and preservation conflicts. The corrected demo
 seeds `clear-edit-04`.
 
 Cases record atomic claims, exact protected spans, allowed edits, expected
-preserve/change decisions, provenance and review guidance. Required and forbidden
-patterns are case-insensitive regular expressions from a restricted subset: a
-`+`, `*` or `{n,m}` may repeat a character, class or escape but never a group,
-because case patterns run against model output at report time and a repeated
-group can backtrack exponentially. Unrepeated alternation and `(...)?` are fine. Their wording is
+preserve/change decisions, provenance and review guidance. `required_phrases`
+and `forbidden_phrases` are lists of literal phrases, never regular expressions:
+they run against model output at report time, and no cheaply validated regex
+subset bounds matching work. A rule is `{"id": ..., "any": ["phrase", ...]}` and
+hits when any phrase occurs in the text, ignoring case and whitespace runs, at a
+word boundary wherever the phrase starts or ends with a word character ("led by"
+does not match "handled by"). List every acceptable wording under `any`. Their wording is
 original and MIT-licensed; there are no private drafts. Both splits cover all
 six skill profiles. There are 36 development cases and 12 held-out cases. Cases
 are grouped under twelve fictional authors and twenty-four fictional documents,
