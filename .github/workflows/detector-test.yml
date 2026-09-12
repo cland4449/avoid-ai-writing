@@ -16,6 +16,9 @@ on:
       - "CHANGELOG.md"
       - "CONTRIBUTING.md"
       - "PROOF.md"
+      - 'bin/**'
+      - 'action.yml'
+      - '.pre-commit-hooks.yaml'
   pull_request:
     paths:
       - "detector/**"
@@ -31,6 +34,9 @@ on:
       - "CHANGELOG.md"
       - "CONTRIBUTING.md"
       - "PROOF.md"
+      - 'bin/**'
+      - 'action.yml'
+      - '.pre-commit-hooks.yaml'
 
 jobs:
   # Kept as a single job on purpose: branch protection pins required checks by
