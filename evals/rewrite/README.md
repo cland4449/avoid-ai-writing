@@ -41,16 +41,44 @@ edits, contextual judgments, and preservation conflicts. The corrected demo
 seeds `clear-edit-04`.
 
 Cases record atomic claims, exact protected spans, allowed edits, expected
-preserve/change decisions, provenance and review guidance. Their wording is
+preserve/change decisions, provenance and review guidance. `required_phrases`
+and `forbidden_phrases` are lists of literal phrases, never regular expressions:
+they run against model output at report time, and no cheaply validated regex
+subset bounds matching work. A rule is `{"id": ..., "any": ["phrase", ...]}` and
+hits when any phrase occurs in the text, ignoring case and whitespace runs, at a
+word boundary wherever the phrase starts or ends with a word character ("led by"
+does not match "handled by"). List every acceptable wording under `any`. Their wording is
 original and MIT-licensed; there are no private drafts. Both splits cover all
-six skill profiles. There are 36 development cases and 12 held-out cases, with
-disjoint fictional author/document IDs. Short fixtures diagnose specific
+six skill profiles. There are 36 development cases and 12 held-out cases. Cases
+are grouped under twelve fictional authors and twenty-four fictional documents,
+several cases to each, and no author or document appears in both splits, so the
+leakage check tests something real. Held-out sources reuse no Tier 1 word,
+template phrase, or numeric figure from a development source. Short fixtures diagnose specific
 mistakes; they do not represent the distribution of real production writing.
 
-The pilot exercises rewrite and prose-edit decisions. It does not test actual
-filesystem edits or detect-mode output. All conditions use the same portable,
-no-tools environment. The exact skill entry and reference contents are included
-in the system prompt. This does not evaluate resource-loading efficiency.
+Every case is a rewrite-mode task, and `protocol.json` freezes that restriction
+in `modes`. Detect and edit modes are out of scope. Edit mode is excluded for a
+reason worth stating: `SKILL.md` defines it as editing a named prose file in
+place with the Edit tool and returning a short report rather than the text, and
+no condition here has a filesystem. Asking for the edited text back instead
+would contradict the mode under test, and the fixed simple prompt carries no
+edit contract at all, so the three conditions would return different kinds of
+artifact and `final_text` could not make them comparable. Adding edit mode later
+needs an identical file-editing tool environment in all three conditions and a
+rule for which post-edit artifact is scored; the harness rejects an edit-mode
+case until then. All conditions use the same portable, no-tools environment. The
+exact skill entry and reference contents are included in the system prompt. This
+does not evaluate resource-loading efficiency.
+
+Rewrite mode still gives the skill conditions a four-section reporting format
+while the simple condition may return only prose. A common user instruction
+therefore requires every condition to place exactly one final artifact between
+the `<<<FINAL_REWRITE>>>` and `<<<END_FINAL_REWRITE>>>` boundary lines. If the
+skill's second pass changes section 2, only the corrected version in section 4
+goes between the boundaries. Result validation derives the complete payload
+from those markers; a reviewer cannot select a more favorable substring. This
+makes the prose sent to mechanical and human review the same kind of artifact
+without removing the skill's reporting behavior from the condition being tested.
 
 ### Freeze a comparison
 
@@ -61,12 +89,19 @@ npm run eval:rewrite:validate
 node scripts/rewrite-eval.test.js
 ```
 
+Both need a git checkout: the harness pins and later re-reads the skill files
+from the baseline and candidate commits with `git show`, so a ZIP download or a
+`git archive` export cannot prepare or verify a plan. The expected case count,
+group size and split sizes live in `protocol.json`, not in the code, so they are
+covered by the protocol hash.
+
 Create a configuration outside the tracked repository. For example:
 
 ```json
 {
   "baseline": "d57265d81b7a8d56827bf23f5deef557fc988462",
   "candidate": "FULL_CANDIDATE_COMMIT_SHA",
+  "corpus": "FULL_CORPUS_COMMIT_SHA",
   "split": "development",
   "models": [{
     "id": "editor-a",
@@ -81,7 +116,10 @@ Create a configuration outside the tracked repository. For example:
 
 Replace the example commit and model placeholders with real identifiers. Resolve
 the desired baseline with `git rev-parse <ref>`; fetch it if absent from a shallow
-checkout. Include every effective setting, including any reasoning budget and
+checkout. `corpus` names the commit whose `evals/rewrite/cases.json` and
+`protocol.json` the plan uses; it defaults to `HEAD` for development runs and must
+be a full SHA for a held-out run. The case set is read from that commit, not from
+the working tree, so commit case edits before preparing. Include every effective setting, including any reasoning budget and
 seed supported by the provider. If a provider only exposes a moving alias,
 record that limitation and do not present the run as version-reproducible.
 Use the same model and settings across baseline, candidate and simple conditions.
@@ -91,9 +129,14 @@ node scripts/rewrite-eval.js prepare /tmp/config.json /tmp/plan.json
 ```
 
 The plan pins full skill commits, file contents/hashes, case and protocol hashes,
-exact prompts, provider/model settings, no-tool policy, task IDs and three
+exact prompts and final-text boundaries, provider/model settings, no-tool policy, task IDs and three
 repetitions per case/condition/model. Preparation resolves refs before freezing.
-An existing output file is never overwritten. Commit the case set, protocol and
+An existing output file is never overwritten. Every later stage re-reads the
+cases and protocol from the pinned corpus commit, re-derives the prompts and task
+list from them, the models and the pinned skill sources, and re-reads every pinned
+file from git, so a plan edited and re-hashed by hand is rejected rather than
+trusted. If baseline and candidate resolve to the same
+commit, `prepare` warns that the plan compares the skill against itself. Commit the case set, protocol and
 candidate before comparisons; archive the plan hash with the experiment record.
 Changing any metric or prompt requires a new preregistration, not rewriting the
 old plan after seeing outputs.
@@ -116,22 +159,28 @@ Save a JSON array of result records outside the tracked repository:
   "prompt_hash": "FROM_TASK",
   "provider": "FROM_MODEL_CONFIG",
   "model_version": "FROM_MODEL_CONFIG",
-  "raw_output": "Complete unmodified model response",
-  "final_text": "Complete unmodified model response",
-  "extraction_reviewer": "Reviewer identifier",
+  "raw_output": "<<<FINAL_REWRITE>>>\nRewritten prose.\n<<<END_FINAL_REWRITE>>>",
+  "final_text": "Rewritten prose.",
+  "final_text_offset": 20,
   "recorded_at": "2026-09-12T12:00:00Z",
   "duration_ms": 1000,
   "usage": {"kind": "actual", "input_tokens": 100, "output_tokens": 50}
 }]
 ```
 
-Keep the complete provider response/usage receipt alongside these records. For
-structured skill output, a person selects the final rewrite as an exact substring
-of the raw response. Do not repair the rewrite. Preserve uncertainty/source-gap
-notes in the raw output for judges. A refusal with no rewrite should remain as
-returned text and be adjudicated as such, not converted into an empty result.
+Keep the complete provider response/usage receipt alongside these records. Each
+task tells the model to use the protocol's exact boundary pair once. Record the
+complete unmodified response in `raw_output`, the entire text between the
+boundary lines in `final_text`, and its zero-based start in
+`final_text_offset`. Validation rejects a missing, repeated or malformed boundary
+and rejects any narrower selection from inside the marked artifact. Do not
+repair the rewrite. Preserve uncertainty/source-gap notes in the raw output for
+the audit record. If a condition refuses or cannot rewrite, its complete refusal belongs
+between the boundaries and is adjudicated as returned, not converted into an
+empty result.
 Label token estimates with `kind: "estimate"`; use `kind: "unavailable"` rather
-than fabricating counts. Record latency with a monotonic timer around the call.
+than fabricating counts. Record latency with a monotonic timer around the call. `recorded_at` must not
+predate the plan's `created_at`; a result dated before the freeze is rejected.
 A failed or missing call leaves the comparison incomplete; log the error and
 rerun that task explicitly. Do not silently choose the best of several outputs.
 
@@ -142,12 +191,19 @@ node scripts/rewrite-eval.js blind /tmp/plan.json /tmp/results.json /tmp/review.
 ```
 
 The packet randomizes output order and assigns opaque aliases. Give the packet
-to a human reviewer; keep the condition mapping private until adjudication.
+to a human reviewer; keep the condition mapping private until adjudication. The
+key is checked at report time as a one-to-one map between aliases and results:
+an extra or duplicated alias is rejected, and adjudication is counted per task,
+so a task judged twice through two aliases cannot stand in for one never judged.
 Reviewers may see the source and expected constraints but not condition labels.
-Formatting can still reveal a condition: this is label blinding, not a guarantee
-that reviewers cannot infer the prompt. The editor model must not judge its own
-outputs. An optional independent model judge may assist, but its unadjudicated
-verdicts do not count as human review.
+The packet contains the validated `final_text`, not the differently formatted
+`raw_output`, so the skill's four-section report cannot disclose its condition or
+prime the judgment. Keep raw responses with the experiment record for a separate
+audit after judgments are frozen. The prose itself may still make a condition
+inferable: this is label blinding, not a guarantee that reviewers cannot infer
+the prompt. The editor model must not judge its own outputs. An optional
+independent model judge may assist, but its unadjudicated verdicts do not count
+as human review.
 
 For each alias, record a human verdict and rationale:
 
@@ -176,6 +232,9 @@ For preference, compare the three alternatives with the same case, model and
 repetition. Mark the preferred output `preferred`, tied best outputs `tie`, the
 others `not_preferred`; leave all three `not_rated` if preference was not assessed.
 Preference concerns usefulness and readability; it cannot erase factual errors.
+A ballot is checked at any size: more than one `preferred`, `preferred` alongside
+`tie`, or `not_rated` mixed with rated votes is rejected before the ballot is full,
+and a full ballot must be one of the three shapes above.
 Disputed/subjective judgments require human adjudication with the reason recorded.
 Keep original reviewer notes alongside the final adjudicated record.
 
@@ -185,7 +244,8 @@ node scripts/rewrite-eval.js report /tmp/plan.json /tmp/results.json /tmp/privat
 
 The report separates all three failure counts and preference counts by editor
 family, model and profile. It also reports completeness and mechanical literal
-checks. Missing judgments are not passes. Unchanged text can incur missed-edit
+checks. Missing judgments are not passes: `complete` is true only when every
+task has a result and a human judgment. Unchanged text can incur missed-edit
 failures. Mechanical checks can flag missing protected text and the demo's known
 regressions, but do not establish semantic fidelity or quality. No detector score
 is used, and no automatic rollout approval is produced.
