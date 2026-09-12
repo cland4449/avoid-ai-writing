@@ -11,6 +11,7 @@ contribution to this repository. Check the assignee and comments, then comment
 on one unclaimed issue before starting. Take only one `good first issue` for
 your first PR; leave the others for fellow newcomers, including while your PR
 is awaiting review.
+- You are also welcome to propose your own issues & ideas
 
 If you've already contributed here, choose a `help wanted` issue without the
 `good first issue` label, propose another improvement, or help review and test
